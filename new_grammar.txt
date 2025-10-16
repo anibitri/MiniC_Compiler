@@ -1,0 +1,25 @@
+
+#### operators with precedence ####
+
+expr ::= IDENT "=" expr | logical_or
+
+logical_or ::= logical_or "||" logical_and | logical_and
+
+logical_and ::= logical_and "&&" equality | equality
+
+equality ::= equality "==" inequality | equality "!=" inequality | inequality
+
+inequality ::= inequality "<=" term | inequality "<" term | inequality ">=" term | inequality ">" term | term
+
+term ::= term "+" factor | term "-" factor | factor
+
+factor ::= factor "*" unary | factor "/" unary | factor "%" unary | unary
+
+unary ::= "-" unary | "!" unary | primary
+
+primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+
+args ::= arg_list | epsilon
+
+arg_list ::= arg_list "," expr | expr
+
