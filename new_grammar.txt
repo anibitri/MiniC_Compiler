@@ -1,19 +1,25 @@
 
-#### operators with precedence ####
+#### operators with precedence and no left recursion####
 
 expr ::= IDENT "=" expr | logical_or
 
-logical_or ::= logical_or "||" logical_and | logical_and
+logical_or ::= logical_and logical_or'
+logical_or' ::= "||" logical_and logical_or' | epsilon
 
-logical_and ::= logical_and "&&" equality | equality
+logical_and ::= equality logical_and'
+logical_and' ::= "&&" equality logical_and' | epsilon
 
-equality ::= equality "==" inequality | equality "!=" inequality | inequality
+equality ::= inequality equality'
+equality' ::= "==" inequality equality' | "!=" inequality equality' | epsilon
 
-inequality ::= inequality "<=" term | inequality "<" term | inequality ">=" term | inequality ">" term | term
+inequality ::= term inequality'
+inequality' ::= "<=" term inequality' | "<" term inequality' | ">=" term inequality' | ">" term inequality' | epsilon
 
-term ::= term "+" factor | term "-" factor | factor
+term ::= factor term'
+term' ::= "+" factor term' | "-" factor term' | epsilon
 
-factor ::= factor "*" unary | factor "/" unary | factor "%" unary | unary
+factor ::= unary factor'
+factor' ::= "*" unary factor' | "/" unary factor' | "%" unary factor' | epsilon
 
 unary ::= "-" unary | "!" unary | primary
 
@@ -21,5 +27,6 @@ primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOO
 
 args ::= arg_list | epsilon
 
-arg_list ::= arg_list "," expr | expr
+arg_list ::= expr arg_list'
+arg_list' ::= "," expr arg_list' | epsilon
 
