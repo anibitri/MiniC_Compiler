@@ -79,3 +79,54 @@ args ::= arg_list | epsilon
 arg_list ::= expr arg_list'
 arg_list' ::= "," expr arg_list' | epsilon
 
+
+
+
+###FIRST sets for grammar###
+
+FIRST(program) = {"extern", "int", "float", "bool", "void"}
+FIRST(extern_list) = {"extern"}
+FIRST(extern_list') = {"extern", epsilon}
+FIRST(extern) = {"extern"}
+FIRST(decl_list) = {"int", "float", "bool", "void"}
+FIRST(decl_list') = {"int", "float", "bool", "void", epsilon}
+FIRST(decl) = {"int", "float", "bool", "void"}
+FIRST(var_decl) = {"int", "float", "bool"}
+FIRST(type_spec) = {"int", "float", "bool", "void"}
+FIRST(var_type) = {"int", "float", "bool"}
+FIRST(fun_decl) = {"int", "float", "bool", "void"}
+FIRST(params) = {"int", "float", "bool", "void", epsilon}
+FIRST(param_list) = {"int", "float", "bool"}
+FIRST(param_list') = {",", epsilon}
+FIRST(param) = {"int", "float", "bool"}
+FIRST(block) = {"{"}
+FIRST(local_decls) = {"int", "float", "bool", epsilon}
+FIRST(local_decls') = {"int", "float", "bool", epsilon}
+FIRST(local_decl) = {"int", "float", "bool"}
+FIRST(stmt_list) =  {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return", epsilon}
+FIRST(stmt_list') = {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return", epsilon}
+FIRST(stmt) =  {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
+FIRST(expr_stmt) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, ";"}
+FIRST(while_stmt) = {"while"}
+FIRST(if_stmt) = {"if"}
+FIRST(else_stmt) = {"else", epsilon}
+FIRST(return_stmt) = {"return}
+
+FIRST(expr) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(logical_or) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(logical_or') = {"||", epsilon}
+FIRST(logical_and) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(logical_and') = {"&&", epsilon}
+FIRST(equality) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(equality') = {"==", "!=", epsilon}
+FIRST(inequality) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(inequality') = {"<=", "<", ">=", ">", epsilon}
+FIRST(term) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(term') = {"+", "-", epsilon}
+FIRST(factor) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(factor') = {"*", "/", "%", epsilon}
+FIRST(unary) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(primary) = {IDENT, "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(args) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, epsilon}
+FIRST(arg_list) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(arg_list') = {",", epsilon}
