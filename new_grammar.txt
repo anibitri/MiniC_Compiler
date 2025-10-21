@@ -130,3 +130,12 @@ FIRST(primary) = {IDENT, "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(args) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, epsilon}
 FIRST(arg_list) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(arg_list') = {",", epsilon}
+
+
+
+###FOLLOW sets for grammar###
+
+FOLLOW(program) = {eof}
+FOLLOW(extern_list) = {"int", "float", "bool", "void"}
+FOLLOW(extern_list') = {"int", "float", "bool", "void"}
+FOLLOW(extern) = {"extern"}
