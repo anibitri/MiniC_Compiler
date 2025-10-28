@@ -430,6 +430,7 @@ public:
   virtual ~ASTnode() {}
   virtual Value *codegen() { return nullptr; };
   virtual std::string to_string() const { return ""; };
+  virtual std::string to_string(int indent = 0) const = 0;
 };
 
 /// IntASTnode - Class for integer literals like 1, 2, 10,
@@ -441,6 +442,11 @@ class IntASTnode : public ASTnode {
 public:
   IntASTnode(TOKEN tok, int val) : Val(val), Tok(tok) {}
   const std::string &getType() const { return Tok.lexeme; }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "IntASTnode: " + std::to_string(Val) + ")\n";
+  };
 };
 
 /// BoolASTnode - Class for boolean literals true and false,
@@ -451,6 +457,11 @@ class BoolASTnode : public ASTnode {
 public:
   BoolASTnode(TOKEN tok, bool B) : Bool(B), Tok(tok) {}
   const std::string &getType() const { return Tok.lexeme; }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "BoolASTnode: " + (Bool ? "true" : "false") + ")\n";
+  };
 };
 
 /// FloatASTnode - Node class for floating point literals like "1.0".
@@ -461,6 +472,11 @@ class FloatASTnode : public ASTnode {
 public:
   FloatASTnode(TOKEN tok, double Val) : Val(Val), Tok(tok) {}
   const std::string &getType() const { return Tok.lexeme; }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "FloatASTnode: " + std::to_string(Val) + ")\n";
+  };
 };
 
 /// VariableASTnode - Class for referencing a variable (i.e. identifier), like
@@ -478,6 +494,11 @@ public:
   const std::string &getName() const { return Name; }
   const std::string &getType() const { return Tok.lexeme; }
   const IDENT_TYPE getVarType() const { return VarType; }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "VariableASTnode: " + Name + ")\n";
+  };
 };
 
 /// ParamAST - Class for a parameter declaration
@@ -490,6 +511,11 @@ public:
       : Name(name), Type(type) {}
   const std::string &getName() const { return Name; }
   const std::string &getType() const { return Type; }
+
+  virtual std::string to_string(int indent = 0) const {
+    std::string pad(indent, ' ');
+    return pad + "ParamAST: " + Name + " : " + Type + ")\n";
+  };
 };
 
 /// DeclAST - Base class for declarations, variables and functions
@@ -509,6 +535,11 @@ public:
       : Var(std::move(var)), Type(type) {}
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "VarDeclAST: " + Var->getName() + " : " + Type + ")\n";
+  };
 };
 
 /// GlobVarDeclAST - Class for a Global variable declaration
@@ -521,6 +552,11 @@ public:
       : Var(std::move(var)), Type(type) {}
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    return pad + "GlobVarDeclAST: " + Var->getName() + " : " + Type + ")\n";
+  };
 };
 
 /// FunctionPrototypeAST - Class for a function declaration's signature
@@ -538,6 +574,17 @@ public:
   const std::string &getType() const { return Type; }
   int getSize() const { return Params.size(); }
   std::vector<std::unique_ptr<ParamAST>> &getParams() { return Params; }
+
+  virtual std::string to_string(int indent = 0) const {
+    std::string pad(indent, ' ');
+    std::string result =
+        pad + "FunctionPrototypeAST: " + Name + " : " + Type + "(\n";
+    for (const auto &param : Params) {
+      result += param->to_string(indent + 2);
+    }
+    result += pad + ")\n";
+    return result;
+  };
 };
 
 class ExprAST : public ASTnode {
@@ -551,6 +598,14 @@ public:
       : Node1(std::move(node1)), Op(op), Node2(std::move(node2)) {}
   int getOp() const { return Op; }
   const std::string &getType();
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "ExprAST: (Op: " + std::to_string(Op) + ")\n";
+    result += Node1->to_string(indent + 2);
+    result += Node2->to_string(indent + 2);
+    return result;
+  };
 };
 
 /// BlockAST - Class for a block with declarations followed by statements
@@ -562,6 +617,21 @@ public:
   BlockAST(std::vector<std::unique_ptr<VarDeclAST>> localDecls,
            std::vector<std::unique_ptr<ASTnode>> stmts)
       : LocalDecls(std::move(localDecls)), Stmts(std::move(stmts)) {}
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "BlockAST: (\n";
+    result += pad + "  LocalDecls:\n";
+    for (const auto &decl : LocalDecls) {
+      result += decl->to_string(indent + 4);
+    }
+    result += pad + "  Stmts:\n";
+    for (const auto &stmt : Stmts) {
+      result += stmt->to_string(indent + 4);
+    }
+    result += pad + ")\n";
+    return result;
+  };
 };
 
 /// FunctionDeclAST - This class represents a function definition itself.
@@ -573,6 +643,15 @@ public:
   FunctionDeclAST(std::unique_ptr<FunctionPrototypeAST> Proto,
                   std::unique_ptr<ASTnode> Block)
       : Proto(std::move(Proto)), Block(std::move(Block)) {}
+
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "FunctionDeclAST: (\n";
+    result += Proto->to_string(indent + 2);
+    result += Block->to_string(indent + 2);
+    result += pad + ")\n";
+    return result;
+  };
 };
 
 /// IfExprAST - Expression class for if/then/else.
@@ -584,6 +663,21 @@ public:
             std::unique_ptr<ASTnode> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
 
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "IfExprAST: (\n";
+    result += pad + "  Condition:\n";
+    result += Cond->to_string(indent + 4);
+    result += pad + "  Then:\n";
+    result += Then->to_string(indent + 4);
+    if (Else) {
+      result += pad + "  Else:\n";
+      result += Else->to_string(indent + 4);
+    }
+    result += pad + ")\n";
+    return result;
+  };
+
 };
 
 /// WhileExprAST - Expression class for while.
@@ -594,6 +688,17 @@ public:
   WhileExprAST(std::unique_ptr<ASTnode> cond, std::unique_ptr<ASTnode> body)
       : Cond(std::move(cond)), Body(std::move(body)) {}
 
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "WhileExprAST: (\n";
+    result += pad + "  Condition:\n";
+    result += Cond->to_string(indent + 4);
+    result += pad + "  Body:\n";
+    result += Body->to_string(indent + 4);
+    result += pad + ")\n";
+    return result;
+  };
+
 };
 
 /// ReturnAST - Class for a return value
@@ -603,6 +708,20 @@ class ReturnAST : public ASTnode {
 public:
   ReturnAST(std::unique_ptr<ASTnode> value) : Val(std::move(value)) {}
 
+  virtual std::string to_string(int indent = 0) const override {
+    std::string pad(indent, ' ');
+    std::string result = pad + "ReturnAST: (\n";
+
+    if (Val) {
+      result += pad + "  Value:\n";
+      result += Val->to_string(indent + 4);
+    } else {
+      result += pad + "  Value: <void>\n";
+    }
+
+    result += pad + ")\n";
+    return result;
+  }
 };
 
 /// ArgsAST - Class for a function argumetn in a function call
@@ -613,6 +732,16 @@ class ArgsAST : public ASTnode {
 public:
   ArgsAST(const std::string &Callee, std::vector<std::unique_ptr<ASTnode>> list)
       : Callee(Callee), ArgsList(std::move(list)) {}
+
+      virtual std::string to_string(int indent = 0) const override {
+        std::string pad(indent, ' ');
+        std::string result = pad + "ArgsAST: (Callee: " + Callee + ", Args: [\n";
+        for (const auto &arg : ArgsList) {
+          result += arg->to_string(indent + 4);
+        }
+        result += pad + "])\n";
+        return result;
+      };
 
 };
 
@@ -1620,6 +1749,8 @@ static std::unique_ptr<Module> TheModule;
 //   printf("%s\n",getType().c_str());
 // }
 
+
+
 //===----------------------------------------------------------------------===//
 // Main driver code.
 //===----------------------------------------------------------------------===//
@@ -1655,6 +1786,8 @@ int main(int argc, char **argv) {
   /* UNCOMMENT : Task 2 - Parser */
    parser();
    fprintf(stderr, "Parsing Finished\n");  
+
+  
 
   printf(
       "********************* FINAL IR (begin) ****************************\n");

@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Build outputs
+build/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+*.dSYM/
+mccomp
+*.out
+
+# CMake (if used)
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+Makefile
+compile_commands.json
+install_manifest.txt
+
+# Logs and archives
+*.log
+*.zip
+*.tar.gz
