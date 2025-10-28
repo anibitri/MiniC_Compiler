@@ -542,13 +542,14 @@ public:
 
 class ExprAST : public ASTnode {
   std::unique_ptr<ASTnode> Node1;
-  char Op;
+  int Op;
   std::unique_ptr<ASTnode> Node2;
 
 public:
-  ExprAST(std::unique_ptr<ASTnode> node1, char op,
+  ExprAST(std::unique_ptr<ASTnode> node1, int op,
           std::unique_ptr<ASTnode> node2)
       : Node1(std::move(node1)), Op(op), Node2(std::move(node2)) {}
+  int getOp() const { return Op; }
   const std::string &getType();
 };
 
@@ -645,6 +646,17 @@ static std::unique_ptr<ASTnode> ParseExper();
 static std::unique_ptr<ParamAST> ParseParam();
 static std::unique_ptr<VarDeclAST> ParseLocalDecl();
 static std::vector<std::unique_ptr<ASTnode>> ParseStmtListPrime();
+
+static std::unique_ptr<ASTnode> ParseLogicalOr();
+static std::unique_ptr<ASTnode> ParseLogicalAnd();
+static std::unique_ptr<ASTnode> ParseEquality();
+static std::unique_ptr<ASTnode> ParseInequality();
+static std::unique_ptr<ASTnode> ParseTerm();
+static std::unique_ptr<ASTnode> ParseFactor();
+static std::unique_ptr<ASTnode> ParseUnary();
+static std::unique_ptr<ASTnode> ParsePrimary();
+static std::vector<std::unique_ptr<ASTnode>> ParseArgs();
+static std::vector<std::unique_ptr<ASTnode>> ParseArgListTail();
 
 // element ::= FLOAT_LIT
 static std::unique_ptr<ASTnode> ParseFloatNumberExpr() {
@@ -781,13 +793,259 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParams() {
 //      | INT_LIT | FLOAT_LIT | BOOL_LIT
 **/
 
-// expr ::= IDENT "=" expr
-//      |  rval
+// expr ::= IDENT "=" expr | logical_or
 static std::unique_ptr<ASTnode> ParseExper() {
-  //
-  // TO BE COMPLETED
-  //
-  return nullptr;
+
+  if (CurTok.type == IDENT) {
+    TOKEN idTok = CurTok;
+    getNextToken(); // eat IDENT
+    if (CurTok.type == ASSIGN) {
+      getNextToken(); // eat '='
+      auto rhs = ParseExper();
+
+      if (!rhs) return nullptr;
+
+      auto lhs = std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
+      return std::make_unique<ExprAST>(std::move(lhs), ASSIGN, std::move(rhs));
+    } else {
+      putBackToken(CurTok); // put back the token after IDENT
+      putBackToken(idTok);  // put back IDENT
+      getNextToken();      // read IDENT again
+   }
+  } 
+
+  return ParseLogicalOr();
+}
+
+// logical_or ::= logical_and logical_or_tail
+// logical_or_tail ::= "||" logical_and logical_or_tail | epsilon
+static std::unique_ptr<ASTnode> ParseLogicalOr() {
+  auto AND = ParseLogicalAnd();
+  if (!AND) return nullptr;
+
+  while (CurTok.type == OR) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '||'
+    auto NextAND = ParseLogicalAnd();
+    if (!NextAND) return nullptr;
+
+    AND = std::make_unique<ExprAST>(std::move(AND), OR, std::move(NextAND));
+  }
+
+  return AND;
+}
+
+// logical_and ::= equality logical_and_tail
+// logical_and_tail ::= "&&" equality logical_and_tail | epsilon
+static std::unique_ptr<ASTnode> ParseLogicalAnd() {
+  auto EQ = ParseEquality();
+  if (!EQ) return nullptr;
+
+  while (CurTok.type == AND) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '&&'
+    auto NextEQ = ParseEquality();
+    if (!NextEQ) return nullptr;
+
+    EQ = std::make_unique<ExprAST>(std::move(EQ), AND, std::move(NextEQ));
+  }
+
+  return EQ;
+}
+
+// equality ::= inequality equality_tail
+// equality_tail ::= "==" inequality equality_tail | "!=" inequality equality_tail | epsilon
+static std::unique_ptr<ASTnode> ParseEquality() {
+  auto INEQ = ParseInequality();
+  if (!INEQ) return nullptr;
+
+  while (CurTok.type == EQ || CurTok.type == NE) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '==' or '!='
+    auto NextINEQ = ParseInequality();
+    if (!NextINEQ) return nullptr;
+
+    INEQ = std::make_unique<ExprAST>(std::move(INEQ), (Op == EQ) ? EQ : NE, std::move(NextINEQ));
+  }
+
+  return INEQ;
+}
+
+// inequality ::= term inequality_tail
+// inequality_tail ::= "<=" term inequality_tail | "<" term inequality_tail | ">=" term inequality_tail | ">" term inequality_tail | epsilon
+static std::unique_ptr<ASTnode> ParseInequality() {
+  auto TERM = ParseTerm();
+  if (!TERM) return nullptr;
+
+  while (CurTok.type == LE || CurTok.type == LT || CurTok.type == GE || CurTok.type == GT) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '<=', '<', '>=', or '>'
+    auto NextTERM = ParseTerm();
+    if (!NextTERM) return nullptr;
+
+    int OpInt;
+    switch (Op) {
+      case LE: OpInt = LE; break;
+      case LT: OpInt = LT; break;
+      case GE: OpInt = GE; break;
+      case GT: OpInt = GT; break;
+    }
+
+    TERM = std::make_unique<ExprAST>(std::move(TERM), OpInt, std::move(NextTERM));
+  }
+
+  return TERM;
+}
+
+// term ::= factor term_tail
+// term_tail ::= "+" factor term_tail | "-" factor term_tail | epsilon
+static std::unique_ptr<ASTnode> ParseTerm() {
+  auto factor = ParseFactor();
+  if (!factor) return nullptr;
+
+  while (CurTok.type == PLUS || CurTok.type == MINUS) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '+' or '-'
+    auto NextFactor = ParseFactor();
+    if (!NextFactor) return nullptr;
+
+    factor = std::make_unique<ExprAST>(std::move(factor), (Op == PLUS) ? PLUS : MINUS, std::move(NextFactor));
+  }
+
+  return factor;
+}
+
+// factor ::= unary factor_tail
+// factor_tail ::= "*" unary factor_tail | "/" unary factor_tail | "%" unary factor_tail | epsilon
+static std::unique_ptr<ASTnode> ParseFactor() {
+  auto unary = ParseUnary();
+  if (!unary) return nullptr;
+
+  while (CurTok.type == ASTERIX || CurTok.type == DIV || CurTok.type == MOD) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '*', '/', or '%'
+    auto NextUnary = ParseUnary();
+    if (!NextUnary) return nullptr;
+    
+    int OpInt;
+    switch (Op) {
+      case ASTERIX: OpInt = ASTERIX; break;
+      case DIV: OpInt = DIV; break;
+      case MOD: OpInt = MOD; break;
+    }
+
+    unary = std::make_unique<ExprAST>(std::move(unary), OpInt, std::move(NextUnary));
+  }
+
+  return unary;
+}
+
+// unary ::= "-" unary | "!" unary | primary
+static std::unique_ptr<ASTnode> ParseUnary() {
+  if (CurTok.type == MINUS || CurTok.type == NOT) {
+    int Op = CurTok.type;
+    getNextToken(); // eat '-' or '!'
+    auto operand = ParseUnary();
+    if (!operand) return nullptr;
+
+    return std::make_unique<ExprAST>(nullptr, (Op == MINUS) ? MINUS : NOT, std::move(operand));
+  } else {
+    return ParsePrimary();
+  }
+}
+
+// primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+static std::unique_ptr<ASTnode> ParsePrimary() {
+  if (CurTok.type == LPAR) {
+    getNextToken(); // eat '('
+    auto expr = ParseExper();
+    if (!expr) return nullptr;
+
+    if (CurTok.type != RPAR)
+      return LogError(CurTok, "expected ')'");
+    getNextToken(); // eat ')'
+    return expr;
+  } else if (CurTok.type == IDENT) {
+    TOKEN idTok = CurTok;
+    getNextToken(); // eat IDENT
+
+    if (CurTok.type == LPAR) { // function call
+      getNextToken(); // eat '('
+      auto args = ParseArgs();
+      if (CurTok.type != RPAR)
+        return LogError(CurTok, "expected ')'");
+      getNextToken(); // eat ')'
+
+      return std::make_unique<ArgsAST>(idTok.getIdentifierStr(), std::move(args));
+    } else { // variable reference
+      return std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
+    }
+  } else if (CurTok.type == INT_LIT) {
+    return ParseIntNumberExpr();
+  } else if (CurTok.type == FLOAT_LIT) {
+    return ParseFloatNumberExpr();
+  } else if (CurTok.type == BOOL_LIT) {
+    return ParseBoolExpr();
+  } else {
+    return LogError(CurTok, "expected '(', identifier, integer literal, float literal, or boolean literal");
+  }
+}
+
+//args ::= arg_list | epsilon
+static std::vector<std::unique_ptr<ASTnode>> ParseArgs() {
+  std::vector<std::unique_ptr<ASTnode>> args_list;
+
+  if (CurTok.type == RPAR) { // FOLLOW(arg_list)
+    // expand by arg_list ::= ε
+    // do nothing
+  } else if (CurTok.type == NOT || CurTok.type == MINUS ||
+             CurTok.type == PLUS || CurTok.type == LPAR ||
+             CurTok.type == IDENT || CurTok.type == INT_LIT ||
+             CurTok.type == BOOL_LIT || CurTok.type == FLOAT_LIT) { // FIRST(expr)
+    auto expr = ParseExper();
+    if (expr) {
+      args_list.push_back(std::move(expr));
+      while (CurTok.type == COMMA) {
+        getNextToken(); // eat ','
+        auto next_expr = ParseExper();
+        if (next_expr) {
+          args_list.push_back(std::move(next_expr));
+        } else
+          return {};
+      }
+    }
+  } else {
+    LogError(CurTok,
+             "expected expression or ')' in function call argument list");
+  }
+
+  return args_list;
+}
+
+// arg_list ::= expr arg_list_tail
+// arg_list_tail ::= "," expr arg_list_tail | epsilon
+static std::vector<std::unique_ptr<ASTnode>> ParseArgListTail() {
+  std::vector<std::unique_ptr<ASTnode>> arg_list;
+
+  if (CurTok.type == COMMA) { // more arguments in list
+    getNextToken();           // eat ","
+
+    auto expr = ParseExper();
+    if (expr) {
+      arg_list.push_back(std::move(expr));
+      auto arg_list_tail = ParseArgListTail();
+      for (unsigned i = 0; i < arg_list_tail.size(); i++) {
+        arg_list.push_back(std::move(arg_list_tail.at(i)));
+      }
+    }
+  } else if (CurTok.type == RPAR) { // FOLLOW(arg_list_tail)
+    // expand by arg_list_tail ::= ε
+    // do nothing
+  } else {
+    LogError(CurTok, "expected ',' or ')' in list of function call arguments");
+  }
+
+  return arg_list;
 }
 
 // expr_stmt ::= expr ";"
@@ -1395,8 +1653,8 @@ int main(int argc, char **argv) {
   // Run the parser now.
 
   /* UNCOMMENT : Task 2 - Parser */
-  //  parser();
-  //  fprintf(stderr, "Parsing Finished\n");  
+   parser();
+   fprintf(stderr, "Parsing Finished\n");  
 
   printf(
       "********************* FINAL IR (begin) ****************************\n");
