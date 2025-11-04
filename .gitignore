@@ -27,3 +27,5 @@ install_manifest.txt
 *.log
 *.zip
 *.tar.gz
+
+*.pdf
