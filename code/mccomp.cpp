@@ -524,6 +524,8 @@ public:
   virtual std::string to_string() const override {
     return fmtNode("IntAST") + " " + fmtValue(std::to_string(Val));
   }
+
+  virtual Value *codegen() override;
 };
 
 /// BoolASTnode - Class for boolean literals true and false,
@@ -538,6 +540,8 @@ public:
   virtual std::string to_string() const override {
     return fmtNode("BoolAST") + " " + fmtValue(Bool ? "true" : "false");
   }
+
+  virtual Value *codegen() override;
 };
 
 /// FloatASTnode - Node class for floating point literals like "1.0".
@@ -552,6 +556,8 @@ public:
   virtual std::string to_string() const override {
     return fmtNode("FloatAST") + " " + fmtValue(std::to_string(Val));
   }
+
+  virtual Value *codegen() override;
 };
 
 /// VariableASTnode - Class for referencing a variable (i.e. identifier), like
@@ -573,6 +579,8 @@ public:
   virtual std::string to_string() const override {
     return fmtNode("VariableAST") + " " + fmtName(Name);
   }
+
+  virtual Value *codegen() override;
 };
 
 /// ParamAST - Class for a parameter declaration
@@ -629,7 +637,7 @@ public:
     return fmtNode("GlobalVarDeclAST") + " " + fmtName(Var->getName()) + " " + fmtType(Type) + " " + fmtValue("(global)");
   }
 
-  
+  virtual Value *codegen() override;
 };
 
 /// FunctionPrototypeAST - Class for a function declaration's signature
@@ -662,8 +670,8 @@ public:
     }
     return result;
   }
-
   
+  Function *codegen();
 };
 
 class ExprAST : public ASTnode {
@@ -688,6 +696,8 @@ public:
     result += formatChild(n2, "`- ", "   ");
     return result;
   }
+
+  virtual Value *codegen() override;
 };
 
 /// BlockAST - Class for a block with declarations followed by statements
@@ -727,7 +737,7 @@ public:
     return result;
   }
 
-  
+  virtual Value *codegen() override;
 };
 
 /// FunctionDeclAST - This class represents a function definition itself.
@@ -752,6 +762,10 @@ public:
     return result;
   }
   
+  Value *codegen() override {
+    Function *F = Proto->codegen();
+    return F;
+  }
 };
 
 /// IfExprAST - Expression class for if/then/else.
@@ -778,6 +792,7 @@ public:
       return result;
   }
 
+  virtual Value *codegen() override;
 };
 
 /// WhileExprAST - Expression class for while.
@@ -798,6 +813,8 @@ public:
       result += formatChild(body, "`- body:      ", "   ");
       return result;
   }
+
+  virtual Value *codegen() override;
 };
 
 /// ReturnAST - Class for a return value
@@ -813,6 +830,8 @@ public:
       std::string v = Val->to_string();
       return title + "\n" + formatChild(v, "`- ", "   ");
   }
+
+  virtual Value *codegen() override;
 };
 
 /// ArgsAST - Class for a function argument in a function call
@@ -842,6 +861,8 @@ public:
       }
       return result;
   }
+
+  virtual Value *codegen() override;
 };
 
 /// LogError* - These are little helper function for error handling.
@@ -1058,7 +1079,8 @@ static std::unique_ptr<ASTnode> ParseLogicalOr() {
   auto AND = ParseLogicalAnd();
   if (!AND) return nullptr;
 
-  while (CurTok.type == OR) {
+  while (CurTok.type == OR) //FIRST(logical_or_tail)
+  {
     int Op = CurTok.type;
     getNextToken(); // eat '||'
     auto NextAND = ParseLogicalAnd();
@@ -1872,6 +1894,309 @@ static void parser() {
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
+
+static std::map<std::string, AllocaInst*> NamedValues;
+static std::map<std::string, Value *> GlobalNamedValues;
+static std::vector<std::unique_ptr<ASTnode>> TopLevelDecls;
+
+Function *getFunction(std::string Name) {
+  // First, see if the function has already been added to the current module.
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  // If not, check whether we can find it in the global module table.
+  // This is for external functions.
+  // return ExternalFunctions[Name];
+  return nullptr;
+}
+
+static Type* getLLVMType(const std::string& typeStr) {
+  if (typeStr == "int") {
+    return Type::getInt32Ty(TheContext);
+  } else if (typeStr == "float") {
+    return Type::getDoubleTy(TheContext);
+  } else if (typeStr == "bool") {
+    return Type::getInt1Ty(TheContext);
+  } else if (typeStr == "void") {
+    return Type::getVoidTy(TheContext);
+  } else {
+    return nullptr; // Unknown type
+  }
+}
+
+static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
+                                         const std::string &VarName,
+                                        Type* type) {
+  IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+                   TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(type, nullptr, VarName);
+}
+
+Value *LogErrorV(TOKEN Tok, const char *Str) {
+  LogError(Tok, Str);
+  return nullptr;
+}
+
+Function *FunctionPrototypeAST::codegen() {
+  // Build function type
+  std::vector<llvm::Type*> ArgTypes;
+  for (auto &P : Params) {
+    ArgTypes.push_back(getLLVMType(P->getType()));
+  }
+  llvm::Type* ReturnType = getLLVMType(Type);
+  if (!ReturnType) return nullptr;
+
+  llvm::FunctionType *FT = llvm::FunctionType::get(ReturnType, ArgTypes, false);
+  llvm::Function *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+
+  // Name arguments
+  unsigned idx = 0;
+  for (auto &Arg : F->args()) {
+    Arg.setName(Params[idx++]->getName());
+  }
+  return F;
+}
+
+Value *GlobVarDeclAST::codegen() {
+  llvm::Type* varType = getLLVMType(Type);
+  
+  if(!varType) {
+    return nullptr;
+  }
+
+  Constant *init = Constant::getNullValue(varType);
+  auto *GlobalVariable = new llvm::GlobalVariable (*TheModule, varType, false, GlobalValue::ExternalLinkage, init, getName());
+  GlobalNamedValues[getName()] = GlobalVariable;
+  return GlobalVariable;
+}
+
+Value *ExprAST::codegen() {
+  if(Op == ASSIGN) {
+    auto *Var = static_cast<VariableASTnode*>(Node1.get());
+    if(!Var) return LogErrorV(CurTok, "destination of assignment must be a variable");
+    Value *RHS = Node2->codegen();
+    if(!RHS) return nullptr;
+
+    AllocaInst *Variable = NamedValues[Var->getName()];
+    if(!Variable) {
+      if (GlobalNamedValues.count(Var->getName())) {
+        Builder.CreateStore(RHS, GlobalNamedValues[Var->getName()]);
+        return RHS;
+      } else {
+        return LogErrorV(CurTok, "Unknown variable name in assignment");
+      }
+
+      return LogErrorV(CurTok, "Unknown variable name in assignment");
+    }
+
+    Builder.CreateStore(RHS, Variable);
+    return RHS;
+  }
+
+  Value *L = Node1->codegen();
+  Value *R = Node2->codegen();
+
+  if (!L || !R)
+    return nullptr;
+
+  auto promoteFP = [&](Value*& X) {
+    if (X->getType()->isIntegerTy(32)) {
+      X = Builder.CreateSIToFP(X, Type::getDoubleTy(TheContext));
+    }
+  };
+
+  bool floatOp = L->getType()->isDoubleTy() || R->getType()->isDoubleTy();
+  if (floatOp) {
+    promoteFP(L);
+    promoteFP(R);
+  } 
+
+  switch (Op) {
+  case PLUS:
+    return floatOp ? Builder.CreateFAdd(L, R) : Builder.CreateAdd(L, R);
+  case MINUS:
+    return floatOp ? Builder.CreateFSub(L, R) : Builder.CreateSub(L, R);
+  case ASTERIX:
+    return floatOp ? Builder.CreateFMul(L, R) : Builder.CreateMul(L, R);
+  case DIV:
+    return floatOp ? Builder.CreateFDiv(L, R) : Builder.CreateSDiv(L, R);
+  case MOD:
+    return Builder.CreateSRem(L, R);
+  case EQ:
+    return floatOp ? Builder.CreateFCmpOEQ(L, R) : Builder.CreateICmpEQ(L, R);
+  case NE:
+    return floatOp ? Builder.CreateFCmpONE(L, R) : Builder.CreateICmpNE(L, R);
+  case LT:
+    return floatOp ? Builder.CreateFCmpOLT(L, R) : Builder.CreateICmpSLT(L, R);
+  case LE:
+    return floatOp ? Builder.CreateFCmpOLE(L, R) : Builder.CreateICmpSLE(L, R);
+  case GT:
+    return floatOp ? Builder.CreateFCmpOGT(L, R) : Builder.CreateICmpSGT(L, R);
+  case GE:
+    return floatOp ? Builder.CreateFCmpOGE(L, R) : Builder.CreateICmpSGE(L, R);
+  case AND: {
+    Function *F = Builder.GetInsertBlock()->getParent();
+    BasicBlock *RHSBB = BasicBlock::Create(TheContext, "and.rhs", F);
+    BasicBlock *MergeBB = BasicBlock::Create(TheContext, "and.end", F);
+    Builder.CreateCondBr(L, RHSBB, MergeBB);
+    Value *R2 = R;
+    Builder.SetInsertPoint(MergeBB);
+    PHINode *PN = Builder.CreatePHI(Type::getInt1Ty(TheContext), 2);
+    PN->addIncoming(ConstantInt::getFalse(TheContext), Builder.GetInsertBlock()->getPrevNode());
+    PN->addIncoming(R2, RHSBB);
+    return PN;
+  }
+  case OR: {
+    Function *F = Builder.GetInsertBlock()->getParent();
+    BasicBlock *RHSBB = BasicBlock::Create(TheContext, "or.rhs", F);
+    BasicBlock *MergeBB = BasicBlock::Create(TheContext, "or.end", F);
+    Builder.CreateCondBr(L, MergeBB, RHSBB);
+    Value *R2 = R;
+    Builder.CreateBr(MergeBB);
+    Builder.SetInsertPoint(MergeBB);
+    PHINode *PN = Builder.CreatePHI(Type::getInt1Ty(TheContext), 2);
+    PN->addIncoming(ConstantInt::getTrue(TheContext), Builder.GetInsertBlock()->getPrevNode());
+    PN->addIncoming(R2, RHSBB);
+    return PN;
+  }
+  }
+  return LogErrorV(CurTok, "invalid binary operator");
+}
+
+Value *BlockAST::codegen() {
+  std::map<std::string, AllocaInst*> OldScope = NamedValues;
+
+  Function *F = Builder.GetInsertBlock()->getParent();
+  for (auto &Decl : LocalDecls) {
+    llvm::Type* type = getLLVMType(Decl->getType());
+    AllocaInst *Alloca = CreateEntryBlockAlloca(F, Decl->getName(), type);
+    NamedValues[Decl->getName()] = Alloca;
+  }
+
+  Value *Last = nullptr;
+  for (auto &Stmt : Stmts) {
+    if(Stmt) {
+      Last = Stmt->codegen();
+    }
+  }
+
+  NamedValues = OldScope;
+  return Last;
+}
+
+Value *IfExprAST::codegen() {
+  Value *ConditionValue = Cond->codegen();
+  if (!ConditionValue) return nullptr;
+
+  ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0), "ifcond");
+
+  Function *F = Builder.GetInsertBlock()->getParent();
+  BasicBlock *ThenBB = BasicBlock::Create(TheContext, "then", F);
+  BasicBlock *ElseBB = Else ? BasicBlock::Create(TheContext, "else", F) : nullptr;
+  BasicBlock *MergeBB = BasicBlock::Create(TheContext, "ifcont", F);
+
+  Builder.CreateCondBr(ConditionValue, ThenBB, Else ? ElseBB : MergeBB);
+
+  Builder.SetInsertPoint(ThenBB);
+  Value *ThenValue = Then->codegen();
+  (void)ThenValue;
+  Builder.CreateBr(MergeBB);
+
+  Value *ElseValue = nullptr;
+  if (Else) {
+    Builder.SetInsertPoint(ElseBB);
+    ElseValue = Else->codegen();
+    (void)ElseValue;
+    Builder.CreateBr(MergeBB);
+  }
+
+  Builder.SetInsertPoint(MergeBB);
+  return Constant::getNullValue(Type::getInt32Ty(TheContext));  
+}
+
+Value *WhileExprAST::codegen() {
+  Function *F = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *ConditionBB = BasicBlock::Create(TheContext, "while.cond", F);
+  BasicBlock *BodyBB = BasicBlock::Create(TheContext, "while.body", F);
+  BasicBlock *EndBB = BasicBlock::Create(TheContext, "while.end", F);
+
+  Builder.CreateBr(ConditionBB);
+
+  Builder.SetInsertPoint(ConditionBB);
+  Value *ConditionValue = Cond->codegen();
+  if (!ConditionValue) return nullptr;
+  ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0));
+  Builder.CreateCondBr(ConditionValue, BodyBB, EndBB);
+
+  Builder.SetInsertPoint(BodyBB);
+  if (Body) Body->codegen();
+  Builder.CreateBr(ConditionBB);
+
+  Builder.SetInsertPoint(EndBB);
+  return Constant::getNullValue(Type::getInt32Ty(TheContext));
+}
+
+Value *ReturnAST::codegen() {
+  if(!Val) {
+    Builder.CreateRetVoid();
+    return nullptr;
+  }
+
+  Value *V = Val->codegen();
+  Builder.CreateRet(V);
+  return V;
+}
+
+Value *ArgsAST::codegen() {
+  Function *CalleeF = getFunction(Callee);
+  if (!CalleeF) CalleeF = TheModule->getFunction(Callee);
+  if (!CalleeF) return LogErrorV(CurTok, "Unknown function referenced");
+
+  if (CalleeF->arg_size() != ArgsList.size())
+    return LogErrorV(CurTok, "Incorrect # arguments passed");
+
+  std::vector<Value *> ArgsV;
+  size_t idx = 0;
+  for (auto &Args : ArgsList) {
+    Value *ArgValue =  Args->codegen();
+    if (!ArgValue) return nullptr;
+
+    Type* ParamType = CalleeF->getFunctionType()->getParamType(idx++);
+
+    if (ParamType->isDoubleTy() && ArgValue->getType()->isIntegerTy(32)) {
+      ArgValue = Builder.CreateSIToFP(ArgValue, ParamType);
+    }
+    ArgsV.push_back(ArgValue);
+  }
+
+  return Builder.CreateCall(CalleeF, ArgsV);
+}
+
+Value *IntASTnode::codegen() {
+  return ConstantInt::get(TheContext, APInt(32, Val, true));
+}
+
+Value *FloatASTnode::codegen() {
+  return ConstantFP::get(TheContext, APFloat(Val));
+}
+
+Value *BoolASTnode::codegen() {
+  return ConstantInt::get(TheContext, APInt(1, Bool, false));
+}
+
+Value *VariableASTnode::codegen() {
+  // Look this variable up in the function.
+  AllocaInst *A = NamedValues[Name];
+  if (!A)
+    return LogErrorV(Tok, "Unknown variable name");
+
+  // Load the value.
+  return Builder.CreateLoad(A->getAllocatedType(), A, Name.c_str());
+}
+
+
+
 
 //===----------------------------------------------------------------------===//
 // AST Printer

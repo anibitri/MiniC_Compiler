@@ -29,3 +29,6 @@ install_manifest.txt
 *.tar.gz
 
 *.pdf
+
+*.ll
+*.s
