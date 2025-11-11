@@ -762,10 +762,7 @@ public:
     return result;
   }
   
-  Value *codegen() override {
-    Function *F = Proto->codegen();
-    return F;
-  }
+  Value *codegen() override;
 };
 
 /// IfExprAST - Expression class for if/then/else.
@@ -1683,6 +1680,10 @@ static std::unique_ptr<ASTnode> ParseBlock() {
                                     std::move(stmt_list));
 }
 
+
+static std::vector<std::unique_ptr<ASTnode>> TopLevelDecls;
+
+
 // decl ::= var_decl
 //       |  fun_decl
 static std::unique_ptr<ASTnode> ParseDecl() {
@@ -1764,6 +1765,7 @@ static void ParseDeclListPrime() {
 
     if (auto decl = ParseDecl()) {
       fprintf(stderr, "Parsed a top-level variable or function declaration\n");
+      TopLevelDecls.push_back(std::move(decl));
     }
     ParseDeclListPrime();
   } else if (CurTok.type == EOF_TOK) { // FOLLOW(decl_list_prime)
@@ -1781,7 +1783,9 @@ static void ParseDeclList() {
   if (decl) {
     llvm::outs() << decl->to_string() << "\n";
     fprintf(stderr, "Parsed a top-level variable or function declaration\n");
+    TopLevelDecls.push_back(std::move(decl));
     ParseDeclListPrime();
+
   }
 }
 
@@ -1847,6 +1851,7 @@ static void ParseExternListPrime() {
 
   if (CurTok.type == EXTERN) { // FIRST(extern)
     if (auto Extern = ParseExtern()) {
+      Extern ->codegen();
       fprintf(stderr,
               "Parsed a top-level external function declaration -- 2\n");
     }
@@ -1867,6 +1872,7 @@ static void ParseExternList() {
   
   if (Extern) {
     llvm::outs() << Extern->to_string() << "\n";
+    llvm::outs() << Extern->codegen() << "\n";
     fprintf(stderr, "Parsed a top-level external function declaration -- 1\n");
     // fprintf(stderr, "Current token: %s \n", CurTok.lexeme.c_str());
     if (CurTok.type == EXTERN)
@@ -1897,7 +1903,6 @@ static std::unique_ptr<Module> TheModule;
 
 static std::map<std::string, AllocaInst*> NamedValues;
 static std::map<std::string, Value *> GlobalNamedValues;
-static std::vector<std::unique_ptr<ASTnode>> TopLevelDecls;
 
 Function *getFunction(std::string Name) {
   // First, see if the function has already been added to the current module.
@@ -1914,7 +1919,7 @@ static Type* getLLVMType(const std::string& typeStr) {
   if (typeStr == "int") {
     return Type::getInt32Ty(TheContext);
   } else if (typeStr == "float") {
-    return Type::getDoubleTy(TheContext);
+    return Type::getFloatTy(TheContext);
   } else if (typeStr == "bool") {
     return Type::getInt1Ty(TheContext);
   } else if (typeStr == "void") {
@@ -1935,6 +1940,45 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
 Value *LogErrorV(TOKEN Tok, const char *Str) {
   LogError(Tok, Str);
   return nullptr;
+}
+
+Value *FunctionDeclAST::codegen() {
+  Function *F = Proto->codegen();
+  if (!F) {
+    return nullptr;
+  }
+
+  if (!F->empty()) {
+    return LogErrorV(CurTok, "Function cannot be redefined.");
+  }
+
+  BasicBlock *EntryBB = BasicBlock::Create(TheContext, "entry", F);
+  Builder.SetInsertPoint(EntryBB);
+
+  NamedValues.clear();
+
+  for (auto &Arg : F->args()) {
+    AllocaInst *Alloca = CreateEntryBlockAlloca(F, std::string(Arg.getName()), Arg.getType());
+    Builder.CreateStore(&Arg, Alloca);
+    NamedValues[std::string(Arg.getName())] = Alloca;
+  }
+
+  if (Block) Block->codegen();
+
+  if (!EntryBB->getTerminator()) {
+    if (F->getReturnType()->isVoidTy()) {
+      Builder.CreateRetVoid();
+    } else if (F->getReturnType()->isIntegerTy(32)) {
+      Builder.CreateRet(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
+    } else if (F->getReturnType()->isFloatTy()) {
+      Builder.CreateRet(ConstantFP::get(Type::getFloatTy(TheContext), APFloat(0.0f)));
+    } else if (F->getReturnType()->isIntegerTy(1)) {
+      Builder.CreateRet(ConstantInt::getFalse(TheContext));
+    }
+  }
+
+  verifyFunction(*F);
+  return F;
 }
 
 Function *FunctionPrototypeAST::codegen() {
@@ -2005,35 +2049,43 @@ Value *ExprAST::codegen() {
     }
   };
 
-  bool floatOp = L->getType()->isDoubleTy() || R->getType()->isDoubleTy();
+  bool isFloatL = L->getType()->isFloatingPointTy();
+  bool isFloatR = R->getType()->isFloatingPointTy();
+  bool floatOp = isFloatL || isFloatR;
+
   if (floatOp) {
-    promoteFP(L);
-    promoteFP(R);
-  } 
+    Type *targetFP = isFloatL ? L->getType() : R->getType();
+    if (!isFloatL && L->getType()->isIntegerTy(32)) {
+      L = Builder.CreateSIToFP(L, targetFP);
+    }
+    if (!isFloatR && R->getType()->isIntegerTy(32)) {
+      R = Builder.CreateSIToFP(R, targetFP);
+    }
+  }
 
   switch (Op) {
   case PLUS:
-    return floatOp ? Builder.CreateFAdd(L, R) : Builder.CreateAdd(L, R);
+    return floatOp ? Builder.CreateFAdd(L, R, "addtmp") : Builder.CreateAdd(L, R, "addtmp");
   case MINUS:
-    return floatOp ? Builder.CreateFSub(L, R) : Builder.CreateSub(L, R);
+    return floatOp ? Builder.CreateFSub(L, R, "subtmp") : Builder.CreateSub(L, R, "subtmp");
   case ASTERIX:
-    return floatOp ? Builder.CreateFMul(L, R) : Builder.CreateMul(L, R);
+    return floatOp ? Builder.CreateFMul(L, R, "multmp") : Builder.CreateMul(L, R, "multmp");
   case DIV:
-    return floatOp ? Builder.CreateFDiv(L, R) : Builder.CreateSDiv(L, R);
+    return floatOp ? Builder.CreateFDiv(L, R, "divtmp") : Builder.CreateSDiv(L, R, "divtmp");
   case MOD:
     return Builder.CreateSRem(L, R);
   case EQ:
-    return floatOp ? Builder.CreateFCmpOEQ(L, R) : Builder.CreateICmpEQ(L, R);
+    return floatOp ? Builder.CreateFCmpOEQ(L, R, "eqtmp") : Builder.CreateICmpEQ(L, R, "eqtmp");
   case NE:
-    return floatOp ? Builder.CreateFCmpONE(L, R) : Builder.CreateICmpNE(L, R);
+    return floatOp ? Builder.CreateFCmpONE(L, R, "netmp") : Builder.CreateICmpNE(L, R, "netmp");
   case LT:
-    return floatOp ? Builder.CreateFCmpOLT(L, R) : Builder.CreateICmpSLT(L, R);
+    return floatOp ? Builder.CreateFCmpOLT(L, R, "lttmp") : Builder.CreateICmpSLT(L, R, "lttmp");
   case LE:
-    return floatOp ? Builder.CreateFCmpOLE(L, R) : Builder.CreateICmpSLE(L, R);
+    return floatOp ? Builder.CreateFCmpOLE(L, R, "letmp") : Builder.CreateICmpSLE(L, R, "letmp");
   case GT:
-    return floatOp ? Builder.CreateFCmpOGT(L, R) : Builder.CreateICmpSGT(L, R);
+    return floatOp ? Builder.CreateFCmpOGT(L, R, "gttmp") : Builder.CreateICmpSGT(L, R, "gttmp");
   case GE:
-    return floatOp ? Builder.CreateFCmpOGE(L, R) : Builder.CreateICmpSGE(L, R);
+    return floatOp ? Builder.CreateFCmpOGE(L, R, "getmp") : Builder.CreateICmpSGE(L, R, "getmp");
   case AND: {
     Function *F = Builder.GetInsertBlock()->getParent();
     BasicBlock *RHSBB = BasicBlock::Create(TheContext, "and.rhs", F);
@@ -2126,7 +2178,15 @@ Value *WhileExprAST::codegen() {
   Builder.SetInsertPoint(ConditionBB);
   Value *ConditionValue = Cond->codegen();
   if (!ConditionValue) return nullptr;
-  ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0));
+
+  if(ConditionValue->getType()->isIntegerTy(1)) {
+
+  } else if(ConditionValue->getType()->isIntegerTy()) {
+    ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0));
+  } else if(ConditionValue->getType()->isFloatingPointTy()) {
+    ConditionValue = Builder.CreateFCmpONE(ConditionValue, ConstantFP::get(ConditionValue->getType(), 0.0));
+  } 
+
   Builder.CreateCondBr(ConditionValue, BodyBB, EndBB);
 
   Builder.SetInsertPoint(BodyBB);
@@ -2178,7 +2238,7 @@ Value *IntASTnode::codegen() {
 }
 
 Value *FloatASTnode::codegen() {
-  return ConstantFP::get(TheContext, APFloat(Val));
+  return ConstantFP::get(Type::getFloatTy(TheContext), Val);
 }
 
 Value *BoolASTnode::codegen() {
@@ -2187,12 +2247,17 @@ Value *BoolASTnode::codegen() {
 
 Value *VariableASTnode::codegen() {
   // Look this variable up in the function.
-  AllocaInst *A = NamedValues[Name];
-  if (!A)
-    return LogErrorV(Tok, "Unknown variable name");
+  if (auto *A = NamedValues[Name]) {
+    return Builder.CreateLoad(A->getAllocatedType(), A, Name.c_str());
+  }
 
-  // Load the value.
-  return Builder.CreateLoad(A->getAllocatedType(), A, Name.c_str());
+  auto it = GlobalNamedValues.find(Name);
+  if (it != GlobalNamedValues.end()) {
+    auto *GlobalValue = llvm::cast<llvm::GlobalVariable>(it->second);
+    return Builder.CreateLoad(GlobalValue->getValueType(), GlobalValue, Name.c_str());
+  }
+
+  return LogErrorV(CurTok, "Unknown variable name");
 }
 
 
@@ -2246,6 +2311,10 @@ int main(int argc, char **argv) {
   /* UNCOMMENT : Task 2 - Parser */
   parser();
   fprintf(stderr, "Parsing Finished\n");  
+
+  for(auto &decl : TopLevelDecls) {
+    decl->codegen();
+  }
 
   printf(
       "********************* FINAL IR (begin) ****************************\n");
