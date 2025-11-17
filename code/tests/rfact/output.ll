@@ -7,6 +7,7 @@ entry:
   %n1 = alloca i32, align 4
   store i32 %n, ptr %n1, align 4
   store i32 0, ptr %result, align 4
+  store i32 0, ptr %result, align 4
   %n2 = load i32, ptr %n1, align 4
   %getmp = icmp sge i32 %n2, 1
   %ifcond = icmp ne i1 %getmp, false

@@ -12,6 +12,7 @@ entry:
   %result = alloca i32, align 4
   %n1 = alloca i32, align 4
   store i32 %n, ptr %n1, align 4
+  store i32 0, ptr %result, align 4
   store i32 12, ptr @test, align 4
   store i32 0, ptr %result, align 4
   %test = load i32, ptr @test, align 4

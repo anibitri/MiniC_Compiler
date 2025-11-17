@@ -13,6 +13,8 @@ entry:
   %n1 = alloca i32, align 4
   store i32 %n, ptr %n1, align 4
   store float %m, ptr %m2, align 4
+  store float 0.000000e+00, ptr %result, align 4
+  store float 0.000000e+00, ptr %sum, align 4
   store float 0.000000e+00, ptr %sum, align 4
   %n3 = load i32, ptr %n1, align 4
   %m4 = load float, ptr %m2, align 4

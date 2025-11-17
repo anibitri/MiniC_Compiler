@@ -348,6 +348,16 @@ static TOKEN gettok() {
     columnNo++;
     return returnTok(",", COMMA);
   }
+  if (LastChar == '[') {
+    LastChar = getc(pFile);
+    columnNo++;
+    return returnTok("[", LBOX);
+  }
+  if (LastChar == ']') {
+    LastChar = getc(pFile);
+    columnNo++;
+    return returnTok("]", RBOX);
+  }
 
   if (isdigit(LastChar) || LastChar == '.') { // Number: [0-9]+.
     std::string NumStr;
@@ -587,15 +597,33 @@ public:
 class ParamAST {
   std::string Name;
   std::string Type;
+  std::vector<int> ArrayDimension;
 
 public:
   ParamAST(const std::string &name, const std::string &type)
       : Name(name), Type(type) {}
+
+  ParamAST(const std::string &name, const std::string &type,
+           std::vector<int> arrayDimension)
+      : Name(name), Type(type), ArrayDimension(std::move(arrayDimension)) {}
+
   const std::string &getName() const { return Name; }
   const std::string &getType() const { return Type; }
 
+  bool isArray() const { return !ArrayDimension.empty(); }
+  const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
+
   virtual std::string to_string() const {
-    return fmtNode("ParamAST") + " " + fmtName(Name) + " " + fmtType(Type);
+     std::string s = fmtNode("ParamAST") + " " + fmtName(Name) + " " + fmtType(Type);
+    if (!ArrayDimension.empty()) {
+      s += " " + fmtValue("[");
+      for (size_t i = 0; i < ArrayDimension.size(); ++i) {
+        s += std::to_string(ArrayDimension[i]);
+        if (i + 1 < ArrayDimension.size()) s += "][";
+      }
+      s += "]";
+    }
+    return s;
   }
 };
 
@@ -610,15 +638,34 @@ public:
 class VarDeclAST : public DeclAST {
   std::unique_ptr<VariableASTnode> Var;
   std::string Type;
+  std::vector<int> ArrayDimension;
 
-public:
+  public:
+  // Add a constructor that accepts dimensions
+  VarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type,
+             std::vector<int> arrayDimension)
+      : Var(std::move(var)), Type(type), ArrayDimension(std::move(arrayDimension)) {}
+
+  // Keep a simple constructor if needed elsewhere
   VarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type)
       : Var(std::move(var)), Type(type) {}
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
 
+  bool isArray() const { return !ArrayDimension.empty(); }
+  const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
+
   virtual std::string to_string() const override {
-    return fmtNode("VarDeclAST") + " " + fmtName(Var->getName()) + " " + fmtType(Type);
+    std::string s = fmtNode("VarDeclAST") + " " + fmtName(Var->getName()) + " " + fmtType(Type);
+    if (!ArrayDimension.empty()) {
+      s += " " + fmtValue("[");
+      for (size_t i=0;i<ArrayDimension.size();++i) {
+        s += std::to_string(ArrayDimension[i]);
+        if (i+1<ArrayDimension.size()) s += "][";
+      }
+      s += "]";
+    }
+    return s;
   }  
 };
 
@@ -626,15 +673,27 @@ public:
 class GlobVarDeclAST : public DeclAST {
   std::unique_ptr<VariableASTnode> Var;
   std::string Type;
+  std::vector<int> ArrayDimension;
 
 public:
-  GlobVarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type)
-      : Var(std::move(var)), Type(type) {}
+  GlobVarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type, std::vector<int> arrayDimension)
+      : Var(std::move(var)), Type(type), ArrayDimension(std::move(arrayDimension)) {}
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
+  bool isArray() const { return !ArrayDimension.empty(); }
+  const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
 
   virtual std::string to_string() const override {
-    return fmtNode("GlobalVarDeclAST") + " " + fmtName(Var->getName()) + " " + fmtType(Type) + " " + fmtValue("(global)");
+     std::string s = fmtNode("GlobalVarDeclAST") + " " + fmtName(Var->getName()) + " " + fmtType(Type) + " " + fmtValue("(global)");
+    if (!ArrayDimension.empty()) {
+      s += " " + fmtValue("[");
+      for (size_t i=0;i<ArrayDimension.size();++i) {
+        s += std::to_string(ArrayDimension[i]);
+        if (i+1<ArrayDimension.size()) s += "][";
+      }
+      s += "]";
+    }
+    return s;
   }
 
   virtual Value *codegen() override;
@@ -862,6 +921,67 @@ public:
   virtual Value *codegen() override;
 };
 
+// ArrayCreationAST - Class for array creation
+class ArrayCreationAST : public ASTnode {
+  std::vector<std::unique_ptr<ASTnode>> Elements;
+
+
+  public: 
+  ArrayCreationAST(std::vector<std::unique_ptr<ASTnode>> elements)
+      : Elements() {
+        for (auto &elem : elements) {
+          Elements.push_back(std::move(elem));
+        }
+      }
+    
+    
+
+  virtual std::string to_string() const override {
+      std::string title = fmtNode("ArrayCreationAST");
+      if (Elements.empty()) return title + " []";
+
+      std::string result = title + "\n";
+
+      for (size_t i = 0; i < Elements.size(); ++i) {
+        const auto &elem = Elements[i];
+
+        std::string child = elem ? elem->to_string() : "<null>";
+        result += formatChild(child, (i + 1 < Elements.size()) ? "|- " : "`- ", (i + 1 < Elements.size()) ? "|  " : "   ");
+
+        if (i + 1 < Elements.size()) result += "\n";
+      }
+      return result;
+  }
+
+  virtual Value *codegen() override;
+};
+
+// ArrayAccessAST - Class for array access
+class ArrayAccessAST : public ASTnode{
+  std::unique_ptr<ASTnode> Base;
+  std::unique_ptr<ASTnode> Index;
+  llvm::Type *ElementType = nullptr;
+
+  public: 
+  ArrayAccessAST(std::unique_ptr<ASTnode> base, std::unique_ptr<ASTnode> index)
+      : Base(std::move(base)), Index(std::move(index)) {}
+
+  virtual std::string to_string() const override {
+      std::string title = fmtNode("ArrayAccessAST");
+      std::string baseStr = Base ? Base->to_string() : "<null>";
+      std::string indexStr = Index ? Index->to_string() : "<null>";
+      
+      std::string result = title + "\n";
+      result += formatChild(baseStr, "|- Base: ", "|  ");
+      result += "\n";
+      result += formatChild(indexStr, "`- Index: ", "   ");
+      return result;
+  }
+  llvm::Type *getElementType() const { return ElementType; }
+  Value *codegenaddress();
+  virtual Value *codegen() override;
+};
+
 /// LogError* - These are little helper function for error handling.
 std::unique_ptr<ASTnode> LogError(TOKEN tok, const char *Str) {
   fprintf(stderr, "%d:%d Error: %s\n", tok.lineNo, tok.columnNo, Str);
@@ -901,8 +1021,10 @@ static std::unique_ptr<ASTnode> ParseTerm();
 static std::unique_ptr<ASTnode> ParseFactor();
 static std::unique_ptr<ASTnode> ParseUnary();
 static std::unique_ptr<ASTnode> ParsePrimary();
+static std::unique_ptr<ASTnode> ParsePrimarySuffix(TOKEN idTok);
 static std::vector<std::unique_ptr<ASTnode>> ParseArgs();
 static std::vector<std::unique_ptr<ASTnode>> ParseArgListTail();
+static std::vector<int> ParseArrayDimensions();
 
 // element ::= FLOAT_LIT
 static std::unique_ptr<ASTnode> ParseFloatNumberExpr() {
@@ -946,19 +1068,23 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParamListPrime() {
     // expand by param_list_prime ::= ε
     // do nothing
   } else {
+    printf("found unexpected token in param_list_prime: %s\n",
+           CurTok.lexeme.c_str());
     LogError(CurTok, "expected ',' or ')' in list of parameter declarations");
   }
 
   return param_list;
 }
 
-// param ::= var_type IDENT
+// param ::= var_type IDENT array_suffix
+// array_suffix ::= "[" num "]" array_suffix | epsilon
 static std::unique_ptr<ParamAST> ParseParam() {
 
   if (CurTok.type != INT_TOK && CurTok.type != FLOAT_TOK && CurTok.type != BOOL_TOK) {
     LogError("expected parameter type ('int', 'float' or 'bool')");
   }
 
+  TOKEN typeTok = CurTok;
   std::string Type = CurTok.lexeme; // type token just seen
   getNextToken();                   // eat the type token
 
@@ -970,8 +1096,13 @@ static std::unique_ptr<ParamAST> ParseParam() {
   printf("found param: %s of type %s\n", Name.c_str(), Type.c_str());
   getNextToken(); // eat IDENT
 
+  auto arrayDimensions = ParseArrayDimensions();
+  if (!arrayDimensions.empty() && typeTok.type == BOOL_TOK) {
+    LogError(typeTok, "boolean arrays are not supported");
+  }
+
   // construct and return parameter
-  return std::make_unique<ParamAST>(Name, Type);
+  return std::make_unique<ParamAST>(Name, Type, std::move(arrayDimensions));
 }
 
 // param_list ::= param param_list_prime
@@ -1046,28 +1177,21 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParams() {
 //      | INT_LIT | FLOAT_LIT | BOOL_LIT
 **/
 
-// expr ::= IDENT "=" expr | logical_or
+// expr ::= left "=" expr | logical_or 
+// left::= IDENT | primarry_suffix
 static std::unique_ptr<ASTnode> ParseExper() {
+    auto LHS = ParseLogicalOr();
+    if (!LHS) return nullptr;
 
-  if (CurTok.type == IDENT) {
-    TOKEN idTok = CurTok;
-    getNextToken(); // eat IDENT
     if (CurTok.type == ASSIGN) {
       getNextToken(); // eat '='
-      auto rhs = ParseExper();
+      auto RHS = ParseExper();
+      if (!RHS) return nullptr;
 
-      if (!rhs) return nullptr;
+      return std::make_unique<ExprAST>(std::move(LHS), ASSIGN, std::move(RHS));
+    } 
 
-      auto lhs = std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
-      return std::make_unique<ExprAST>(std::move(lhs), ASSIGN, std::move(rhs));
-    } else {
-      putBackToken(CurTok); // put back the token after IDENT
-      putBackToken(idTok);  // put back IDENT
-      getNextToken();      // read IDENT again
-   }
-  } 
-
-  return ParseLogicalOr();
+  return LHS;
 }
 
 // logical_or ::= logical_and logical_or_tail
@@ -1230,6 +1354,7 @@ static std::unique_ptr<ASTnode> ParseUnary() {
 }
 
 // primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+// primary ::= IDENT primary_suffix | "(" expr ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
 static std::unique_ptr<ASTnode> ParsePrimary() {
   if (CurTok.type == LPAR) {
     getNextToken(); // eat '('
@@ -1244,17 +1369,8 @@ static std::unique_ptr<ASTnode> ParsePrimary() {
     TOKEN idTok = CurTok;
     getNextToken(); // eat IDENT
 
-    if (CurTok.type == LPAR) { // function call
-      getNextToken(); // eat '('
-      auto args = ParseArgs();
-      if (CurTok.type != RPAR)
-        return LogError(CurTok, "expected ')'");
-      getNextToken(); // eat ')'
-
-      return std::make_unique<ArgsAST>(idTok.getIdentifierStr(), std::move(args));
-    } else { // variable reference
-      return std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
-    }
+    return ParsePrimarySuffix(idTok);
+    
   } else if (CurTok.type == INT_LIT) {
     return ParseIntNumberExpr();
   } else if (CurTok.type == FLOAT_LIT) {
@@ -1265,6 +1381,36 @@ static std::unique_ptr<ASTnode> ParsePrimary() {
     return LogError(CurTok, "expected '(', identifier, integer literal, float literal, or boolean literal");
   }
 }
+
+//primary_suffix ::= "(" args ")" | "[" expr "]" | epsilon
+static std::unique_ptr<ASTnode> ParsePrimarySuffix(TOKEN idTok) {
+  std::unique_ptr<ASTnode> node = std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
+
+  if (CurTok.type == LPAR) { // function call
+    getNextToken(); // eat '('
+    auto args = ParseArgs();
+
+    if (CurTok.type != RPAR)
+      return LogError(CurTok, "expected ')' after function call arguments");
+    getNextToken(); // eat ')'
+    node = std::make_unique<ArgsAST>(idTok.getIdentifierStr(), std::move(args));
+  }
+  
+  while(CurTok.type == LBOX) { // array access
+    getNextToken(); // eat '['
+    auto indexExpr = ParseExper();
+    if (!indexExpr) return LogError("Expected expression in array index");
+
+    if (CurTok.type != RBOX)
+      return LogError(CurTok, "expected ']' after array index expression");
+    getNextToken(); // eat ']'
+    node = std::make_unique<ArrayAccessAST>(std::move(node), std::move(indexExpr));
+  } 
+
+
+  return node;
+}
+
 
 //args ::= arg_list | epsilon
 static std::vector<std::unique_ptr<ASTnode>> ParseArgs() {
@@ -1589,7 +1735,7 @@ static std::vector<std::unique_ptr<VarDeclAST>> ParseLocalDeclsPrime() {
   return local_decls_prime;
 }
 
-// local_decl ::= var_type IDENT ";"
+//local_decl ::= var_type IDENT array_decl ";"
 // var_type ::= "int"
 //           |  "float"
 //           |  "bool"
@@ -1606,15 +1752,25 @@ static std::unique_ptr<VarDeclAST> ParseLocalDecl() {
     if (CurTok.type == IDENT) {
       Type = PrevTok.lexeme;
       Name = CurTok.getIdentifierStr(); // save the identifier name
-      auto ident = std::make_unique<VariableASTnode>(CurTok, Name);
-      local_decl = std::make_unique<VarDeclAST>(std::move(ident), Type);
-
+      TOKEN identTok = CurTok;
       getNextToken(); // eat 'IDENT'
+
+      auto dimensions = ParseArrayDimensions();
+      if (!dimensions.empty() && PrevTok.type == BOOL_TOK) {
+        LogError(PrevTok, "only 'int' and 'float' types can be declared as arrays");
+        return nullptr;
+        
+      }
+
       if (CurTok.type != SC) {
         LogError(CurTok, "Expected ';' to end local variable declaration");
         return nullptr;
       }
       getNextToken(); // eat ';'
+
+      auto ident = std::make_unique<VariableASTnode>(identTok, Name);
+      local_decl = std::make_unique<VarDeclAST>(std::move(ident), Type, std::move(dimensions));
+
       fprintf(stderr, "Parsed a local variable declaration\n");
     } else {
       LogError(CurTok, "expected identifier' in local variable declaration");
@@ -1622,6 +1778,39 @@ static std::unique_ptr<VarDeclAST> ParseLocalDecl() {
     }
   }
   return local_decl;
+}
+
+// arraydecl ::= "[" INT_LIT "]" array_decl | epsilon
+static std::vector<int> ParseArrayDimensions() {
+  std::vector<int> dimensions;
+
+  while (CurTok.type == LBOX) { // FIRST(array_decl)
+    getNextToken(); // eat '['
+    if (CurTok.type != INT_LIT) {
+      LogError(CurTok, "expected integer literal in array declaration");
+      return {};
+    }
+    int size = CurTok.getIntVal();
+    if (size <= 0) {
+      LogError(CurTok, "array size must be a positive integer");
+      return {};
+    }
+    dimensions.push_back(size);
+    getNextToken(); // eat INT_LIT
+
+    if (CurTok.type != RBOX) {
+      LogError(CurTok, "expected ']' in array declaration");
+      return {};
+    }
+    getNextToken(); // eat ']'
+  }
+  // if no dimensions were found, return nullptr
+  if (dimensions.size() > 3) {
+    LogError(CurTok, "arrays with more than 3 dimensions are not supported");
+    return {};
+  }
+  return dimensions;
+  
 }
 
 // local_decls ::= local_decl local_decls_prime
@@ -1701,23 +1890,29 @@ static std::unique_ptr<ASTnode> ParseDecl() {
     if (CurTok.type == IDENT) {
       auto ident = std::make_unique<VariableASTnode>(CurTok, IdName);
       getNextToken(); // eat the IDENT
-      if (CurTok.type ==
-          SC) {         // found ';' then this is a global variable declaration.
+      auto dimensions = ParseArrayDimensions();
+      if (CurTok.type == SC) {         // found ';' then this is a global variable declaration.
+
         getNextToken(); // eat ;
         fprintf(stderr, "Parsed a variable declaration\n");
 
-        if (PrevTok.type != VOID_TOK)
-          return std::make_unique<GlobVarDeclAST>(std::move(ident),
-                                                  PrevTok.lexeme);
-        else
-          return LogError(PrevTok,
-                          "Cannot have variable declaration with type 'void'");
-      } else if (CurTok.type ==
-                 LPAR) { // found '(' then this is a function declaration.
+        if (PrevTok.type == VOID_TOK) {
+            return LogError(PrevTok, "Cannot have variable declaration with type 'void'");
+        }
+    
+        if (!dimensions.empty() && PrevTok.type == BOOL_TOK) {
+          return LogError(PrevTok, "only 'int' and 'float' types can be declared as arrays");
+        }
+
+        return std::make_unique<GlobVarDeclAST>(std::move(ident), PrevTok.lexeme, std::move(dimensions));
+
+      } else if (CurTok.type == LPAR) { // found '(' then this is a function declaration.
+        if (!dimensions.empty()) {
+          return LogError(CurTok, "functions cannot be declared as arrays");
+        }
         getNextToken();  // eat (
 
-        auto P =
-            ParseParams(); // parse the parameters, returns a vector of params
+        auto P = ParseParams(); // parse the parameters, returns a vector of params
         // if (P.size() == 0) return nullptr;
         fprintf(stderr, "Parsed parameter list for function\n");
 
@@ -1764,6 +1959,7 @@ static void ParseDeclListPrime() {
       CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { // FIRST(decl)
 
     if (auto decl = ParseDecl()) {
+      llvm::outs() << decl->to_string() << "\n";
       fprintf(stderr, "Parsed a top-level variable or function declaration\n");
       TopLevelDecls.push_back(std::move(decl));
     }
@@ -1904,6 +2100,8 @@ static std::unique_ptr<Module> TheModule;
 static std::map<std::string, AllocaInst*> NamedValues;
 static std::map<std::string, Value *> GlobalNamedValues;
 
+static std::map<std::string, llvm::Type*> VarDeclaredTypes;
+
 Function *getFunction(std::string Name) {
   // First, see if the function has already been added to the current module.
   if (auto *F = TheModule->getFunction(Name))
@@ -1957,10 +2155,22 @@ Value *FunctionDeclAST::codegen() {
 
   NamedValues.clear();
 
+  auto &params = Proto->getParams();
+  unsigned argidx = 0;
   for (auto &Arg : F->args()) {
     AllocaInst *Alloca = CreateEntryBlockAlloca(F, std::string(Arg.getName()), Arg.getType());
     Builder.CreateStore(&Arg, Alloca);
     NamedValues[std::string(Arg.getName())] = Alloca;
+
+    if (argidx < params.size() && params[argidx] && params[argidx]->isArray()) {
+      llvm::Type *agg = getLLVMType(params[argidx]->getType());
+      for (auto it = params[argidx]->getArrayDimension().rbegin(); it != params[argidx]->getArrayDimension().rend(); ++it) {
+        agg = llvm::ArrayType::get(agg, *it);
+      }
+
+      VarDeclaredTypes[std::string(Arg.getName())] = agg;
+    }
+    argidx++;
   }
 
   if (Block) Block->codegen();
@@ -1985,7 +2195,18 @@ Function *FunctionPrototypeAST::codegen() {
   // Build function type
   std::vector<llvm::Type*> ArgTypes;
   for (auto &P : Params) {
-    ArgTypes.push_back(getLLVMType(P->getType()));
+    llvm::Type* base = getLLVMType(P->getType());
+    if (!base) return nullptr;
+
+    llvm::Type* paramType = base;
+
+    if (P->isArray()) {
+      for (auto it = P->getArrayDimension().rbegin(); it != P->getArrayDimension().rend(); ++it) {
+        paramType = llvm::ArrayType::get(paramType, *it);
+      }
+      paramType = paramType->getPointerTo();
+    }
+    ArgTypes.push_back(paramType);
   }
   llvm::Type* ReturnType = getLLVMType(Type);
   if (!ReturnType) return nullptr;
@@ -2002,40 +2223,95 @@ Function *FunctionPrototypeAST::codegen() {
 }
 
 Value *GlobVarDeclAST::codegen() {
-  llvm::Type* varType = getLLVMType(Type);
+  llvm::Type* baseType = getLLVMType(Type);
   
-  if(!varType) {
+  if(!baseType) {
     return nullptr;
   }
 
-  Constant *init = Constant::getNullValue(varType);
+  llvm::Type *varType = baseType;
+  if(!getArrayDimension().empty()) {
+    for(auto i = getArrayDimension().rbegin(); i != getArrayDimension().rend(); ++i) {
+      varType = ArrayType::get(varType, *i);
+    }
+  } 
+
+  Constant *init = nullptr;
+  if(isa<ArrayType>(varType)) {
+    init = ConstantAggregateZero::get(varType);
+  } else {
+    init = Constant::getNullValue(varType);
+  }
   auto *GlobalVariable = new llvm::GlobalVariable (*TheModule, varType, false, GlobalValue::ExternalLinkage, init, getName());
   GlobalNamedValues[getName()] = GlobalVariable;
+
+  if (isa<ArrayType>(varType)) {
+    VarDeclaredTypes[getName()] = varType;
+  }
   return GlobalVariable;
 }
 
 Value *ExprAST::codegen() {
   if(Op == ASSIGN) {
-    auto *Var = static_cast<VariableASTnode*>(Node1.get());
-    if(!Var) return LogErrorV(CurTok, "destination of assignment must be a variable");
+  if (auto *Var = dynamic_cast<VariableASTnode*>(Node1.get())) {
+    
     Value *RHS = Node2->codegen();
     if(!RHS) return nullptr;
 
-    AllocaInst *Variable = NamedValues[Var->getName()];
-    if(!Variable) {
-      if (GlobalNamedValues.count(Var->getName())) {
-        Builder.CreateStore(RHS, GlobalNamedValues[Var->getName()]);
-        return RHS;
-      } else {
-        return LogErrorV(CurTok, "Unknown variable name in assignment");
+    
+    if(auto *Local = NamedValues[Var->getName()]) {
+      llvm::Type *DestinationType = Local->getAllocatedType();
+      if(DestinationType->isFloatTy() && RHS->getType()->isIntegerTy(32)){
+        RHS = Builder.CreateSIToFP(RHS, DestinationType);
+      } else if(DestinationType->isIntegerTy(32) && RHS->getType()->isFloatingPointTy()){
+        RHS = Builder.CreateFPToSI(RHS, DestinationType);
       }
-
-      return LogErrorV(CurTok, "Unknown variable name in assignment");
+      Builder.CreateStore(RHS, Local);
+      return RHS;
     }
 
-    Builder.CreateStore(RHS, Variable);
+    auto it = GlobalNamedValues.find(Var->getName());
+    if (it != GlobalNamedValues.end()) {
+      printf("Found global variable: %s\n", Var->getName().c_str());
+      auto *GlobalVariable = llvm::dyn_cast<llvm::GlobalVariable>(it->second);
+      if (!GlobalVariable) {
+        return LogErrorV(CurTok, "Expected a global variable");
+      }
+      llvm::Type *DestinationType = GlobalVariable->getValueType();
+      if(DestinationType->isFloatTy() && RHS->getType()->isIntegerTy(32)){
+        RHS = Builder.CreateSIToFP(RHS, DestinationType);
+      } else if(DestinationType->isIntegerTy(32) && RHS->getType()->isFloatingPointTy()){
+        RHS = Builder.CreateFPToSI(RHS, DestinationType);
+      }
+      Builder.CreateStore(RHS, GlobalVariable);
+      return RHS;
+    }
+
+    return LogErrorV(CurTok, "unknown variable name in assignment");
+  }
+
+
+  if(auto *Arr = dynamic_cast<ArrayAccessAST*>(Node1.get())) {
+    Value *ArrayPtr = Arr->codegenaddress();
+    if(!ArrayPtr) return nullptr;
+
+    Value *RHS = Node2->codegen();
+    if(!RHS) return nullptr;
+
+    llvm::Type *DestinationType = Arr->getElementType();
+    if(!DestinationType) return LogErrorV(CurTok, "could not determine array element type in assignment");
+    if(DestinationType->isFloatTy() && RHS->getType()->isIntegerTy(32)){
+      RHS = Builder.CreateSIToFP(RHS, DestinationType);
+    } else if(DestinationType->isIntegerTy(32) && RHS->getType()->isFloatingPointTy()){
+      RHS = Builder.CreateFPToSI(RHS, DestinationType);
+    }
+    Builder.CreateStore(RHS, ArrayPtr);
     return RHS;
   }
+
+    return LogErrorV(CurTok, "destination of assignment must be a variable or array access");
+  }
+
 
   Value *L = Node1->codegen();
   Value *R = Node2->codegen();
@@ -2120,9 +2396,32 @@ Value *BlockAST::codegen() {
 
   Function *F = Builder.GetInsertBlock()->getParent();
   for (auto &Decl : LocalDecls) {
-    llvm::Type* type = getLLVMType(Decl->getType());
-    AllocaInst *Alloca = CreateEntryBlockAlloca(F, Decl->getName(), type);
+    llvm::Type* basetype = getLLVMType(Decl->getType());
+
+    llvm::Type *allocType = basetype;
+    if (Decl->isArray()) {
+      for (auto it = Decl->getArrayDimension().rbegin(); it != Decl->getArrayDimension().rend(); ++it) {
+        allocType = ArrayType::get(allocType, *it);
+      }
+    }
+
+    AllocaInst *Alloca = CreateEntryBlockAlloca(F, Decl->getName(), allocType);
     NamedValues[Decl->getName()] = Alloca;
+
+    if(Decl->isArray()) {
+      auto *zero = isa<ArrayType>(allocType) ? ConstantAggregateZero::get(allocType) : Constant::getNullValue(allocType);
+      Builder.CreateStore(zero, Alloca);
+    } else {
+      Constant *zero = nullptr;
+      if (allocType->isIntegerTy(32)) {
+        zero = ConstantInt::get(Type::getInt32Ty(TheContext), 0);
+      } else if (allocType->isFloatTy()) {
+        zero = ConstantFP::get(Type::getFloatTy(TheContext), APFloat(0.0f));
+      } else if (allocType->isIntegerTy(1)) {
+        zero = ConstantInt::getFalse(TheContext);
+      }
+      if (zero) Builder.CreateStore(zero, Alloca);
+    }
   }
 
   Value *Last = nullptr;
@@ -2134,6 +2433,117 @@ Value *BlockAST::codegen() {
 
   NamedValues = OldScope;
   return Last;
+}
+
+static AllocaInst* FindAllocaInEntryByName(const std::string& name) {
+  auto *BB = Builder.GetInsertBlock();
+  if(!BB) return nullptr;
+  Function *F = BB->getParent();
+  if(!F) return nullptr;
+
+  BasicBlock &Entry = F->getEntryBlock();
+  for (Instruction &I : Entry) {
+    if (auto *Alloca = dyn_cast<AllocaInst>(&I)) {
+      if (Alloca->getName() == name) {
+        return Alloca;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+Value *ArrayAccessAST::codegenaddress() {
+  Value *basePtr = nullptr;
+  llvm::Type *elementType = nullptr;
+
+  if (auto *Var = dynamic_cast<VariableASTnode*>(Base.get())) {
+    const std::string &name = Var->getName();
+    printf("Generating code for array access base variable: %s\n", Var->getName().c_str());
+    if (auto *Alloca = NamedValues[name]) {
+      printf("Found local variable for array access: %s\n", Var->getName().c_str());
+      basePtr = Alloca;
+      elementType = Alloca->getAllocatedType();
+
+      if (elementType->isPointerTy()) {
+        auto it = VarDeclaredTypes.find(name);
+        if(it == VarDeclaredTypes.end()) {
+          return LogErrorV(CurTok, "could not find declared type for pointer array variable");
+        }
+        elementType = it->second; 
+        Value *loadedPtr = Builder.CreateLoad(Alloca->getAllocatedType(), Alloca, name + "_loadedptr");
+        basePtr = loadedPtr;
+        
+      }
+    } else if (auto *Alloca = FindAllocaInEntryByName(name)) {
+
+      basePtr = Alloca;
+      elementType = Alloca->getAllocatedType();
+
+      if (elementType->isPointerTy()) {
+        auto it = VarDeclaredTypes.find(name);
+        if(it == VarDeclaredTypes.end()) {
+          return LogErrorV(CurTok, "could not find declared type for pointer array variable");
+        }
+        elementType = it->second; 
+        Value *loadedPtr = Builder.CreateLoad(Alloca->getAllocatedType(), Alloca, name + "_loadedptr");
+        basePtr = loadedPtr;
+        
+      }
+    } else if (auto it = GlobalNamedValues.find(name); it != GlobalNamedValues.end()) {
+        printf("Found global variable for array access: %s\n", Var->getName().c_str());
+        if (auto *GlobalVariable = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
+          basePtr = GlobalVariable;
+          elementType = GlobalVariable->getValueType();
+        } 
+    }
+
+    printf("Base pointer: %p, Element type: %p\n", basePtr, elementType);
+    if (!basePtr || !elementType) {
+      return LogErrorV(CurTok, "Unknown variable name in array access");
+    }
+
+  } else if (auto *ArrayAccess = dynamic_cast<ArrayAccessAST*>(Base.get())) {
+    basePtr = ArrayAccess->codegenaddress();
+    if (!basePtr) return nullptr;
+    elementType = ArrayAccess->getElementType();
+    if (!elementType) return LogErrorV(CurTok, "could not determine array element type in nested array access");
+  } else {
+    return LogErrorV(CurTok, "Array base must be a variable or another array access");
+  } 
+
+  Value *idx = Index->codegen();
+  if (!idx) return nullptr;
+
+  if (idx->getType()->isFloatingPointTy()) {
+    idx = Builder.CreateFPToSI(idx, Type::getInt32Ty(TheContext));
+  } else if (idx->getType()->isIntegerTy(1)) {
+    idx = Builder.CreateZExt(idx, Type::getInt32Ty(TheContext));
+  } else if (!idx->getType()->isIntegerTy(32)) {
+    idx = Builder.CreateIntCast(idx, Type::getInt32Ty(TheContext), true);
+  }
+
+  if (auto *arrType = llvm::dyn_cast<llvm::ArrayType>(elementType)) {
+    Value *zero = ConstantInt::get(llvm::Type::getInt32Ty(TheContext), 0);
+    Value *ptr = Builder.CreateInBoundsGEP(elementType, basePtr, {zero, idx}, "arrayidx");
+    ElementType = arrType->getElementType();
+    return ptr;
+  } else {
+    Value *ptr = Builder.CreateInBoundsGEP(elementType, basePtr, {idx}, "arrayidx");
+    ElementType = elementType;
+    return ptr;
+  }
+}
+
+Value *ArrayAccessAST::codegen() {
+  Value *addr = codegenaddress();
+  if (!addr) return nullptr;
+
+  if(!ElementType) {
+    return LogErrorV(CurTok, "could not determine array element type in array access");
+  }
+
+  return Builder.CreateLoad(ElementType, addr, "arrayload");
 }
 
 Value *IfExprAST::codegen() {
@@ -2217,16 +2627,38 @@ Value *ArgsAST::codegen() {
     return LogErrorV(CurTok, "Incorrect # arguments passed");
 
   std::vector<Value *> ArgsV;
-  size_t idx = 0;
-  for (auto &Args : ArgsList) {
-    Value *ArgValue =  Args->codegen();
-    if (!ArgValue) return nullptr;
+  for (size_t i = 0; i<ArgsList.size(); ++i) {
+    llvm::Type* ParamType = CalleeF->getFunctionType()->getParamType(i);
+    Value *ArgValue = nullptr;
 
-    Type* ParamType = CalleeF->getFunctionType()->getParamType(idx++);
-
-    if (ParamType->isDoubleTy() && ArgValue->getType()->isIntegerTy(32)) {
-      ArgValue = Builder.CreateSIToFP(ArgValue, ParamType);
+    if (ParamType->isPointerTy()) {
+      if (auto *Var = dynamic_cast<VariableASTnode*>(ArgsList[i].get())) {
+        const std::string &name = Var->getName();
+        if (auto *Alloca = NamedValues[name]) {
+          llvm::Type *allocType = Alloca->getAllocatedType();
+          if (allocType->isArrayTy()) {
+            ArgValue = Alloca;
+          } else if (allocType->isPointerTy()) {
+            ArgValue = Builder.CreateLoad(allocType, Alloca, name + ".argptr");
+          }
+        } else if (auto it = GlobalNamedValues.find(name); it!= GlobalNamedValues.end()) {
+          ArgValue = it->second;
+        }
+      }
     }
+
+    if (!ArgValue) {
+      ArgValue = ArgsList[i]->codegen();
+      if (!ArgValue)
+        return nullptr;
+      
+        if (ParamType->isFloatTy() && ArgValue->getType()->isIntegerTy(32)) {
+          ArgValue = Builder.CreateSIToFP(ArgValue, ParamType);
+        } else if (ParamType->isIntegerTy(32) && ArgValue->getType()->isFloatingPointTy()) {
+          ArgValue = Builder.CreateFPToSI(ArgValue, ParamType);
+        }
+    }
+
     ArgsV.push_back(ArgValue);
   }
 

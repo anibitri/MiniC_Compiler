@@ -9,6 +9,10 @@ entry:
   %t = alloca i32, align 4
   %number1 = alloca i32, align 4
   store i32 %number, ptr %number1, align 4
+  store i32 0, ptr %t, align 4
+  store i32 0, ptr %rev, align 4
+  store i32 0, ptr %rmndr, align 4
+  store i1 false, ptr %result, align 1
   store i32 0, ptr %rev, align 4
   store i1 false, ptr %result, align 1
   %number2 = load i32, ptr %number1, align 4

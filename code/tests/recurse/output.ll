@@ -9,6 +9,7 @@ entry:
   %n1 = alloca i32, align 4
   store i32 %n, ptr %n1, align 4
   store i32 0, ptr %result, align 4
+  store i32 0, ptr %result, align 4
   %n2 = load i32, ptr %n1, align 4
   %netmp = icmp ne i32 %n2, 0
   %ifcond = icmp ne i1 %netmp, false

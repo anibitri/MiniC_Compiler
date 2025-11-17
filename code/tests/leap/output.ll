@@ -9,6 +9,8 @@ entry:
   %isLeap = alloca i32, align 4
   %year1 = alloca i32, align 4
   store i32 %year, ptr %year1, align 4
+  store i32 0, ptr %isLeap, align 4
+  store i32 0, ptr %temp, align 4
   %year2 = load i32, ptr %year1, align 4
   %0 = srem i32 %year2, 4
   %eqtmp = icmp eq i32 %0, 0

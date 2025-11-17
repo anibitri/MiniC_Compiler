@@ -6,6 +6,9 @@ entry:
   %i = alloca i32, align 4
   %PI = alloca float, align 4
   %flag = alloca i1, align 1
+  store i1 false, ptr %flag, align 1
+  store float 0.000000e+00, ptr %PI, align 4
+  store i32 0, ptr %i, align 4
   store i1 true, ptr %flag, align 1
   store float 3.000000e+00, ptr %PI, align 4
   store i32 2, ptr %i, align 4

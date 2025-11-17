@@ -7,6 +7,7 @@ define void @Void() {
 entry:
   %result = alloca i32, align 4
   store i32 0, ptr %result, align 4
+  store i32 0, ptr %result, align 4
   %result1 = load i32, ptr %result, align 4
   %0 = call i32 @print_int(i32 %result1)
   br label %while.cond

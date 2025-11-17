@@ -23,7 +23,8 @@ params ::= param_list  |  "void" | epsilon
 param_list ::= param param_list_tail 
 param_list_tail ::= "," param param_list_tail | epsilon
   
-param ::= var_type IDENT
+param ::= var_type IDENT array_suffix
+array_suffix ::= "[" num "]"
 
 block ::= "{" local_decls stmt_list "}"
 
@@ -50,7 +51,8 @@ return_stmt ::= "return" ";"    |  "return" expr ";"
 
 #### operators with precedence and no left recursion####
 
-expr ::= IDENT "=" expr | logical_or
+expr ::= left "=" expr | logical_or 
+left::= IDENT | IDENT "[" expr "]"
 
 logical_or ::= logical_and logical_or_tail
 logical_or_tail ::= "||" logical_and logical_or_tail | epsilon
@@ -78,6 +80,7 @@ args ::= arg_list | epsilon
 
 arg_list ::= expr arg_list_tail
 arg_list_tail ::= "," expr arg_list_tail | epsilon
+
 
 
 
@@ -142,4 +145,14 @@ FOLLOW(extern) = {"extern"}
 FOLLOW(decl_list) = {eof}
 
 
-FOLLOW(expr) = {}
+
+
+##### GRAMMAR EXTENSION FOR ARRAYS #####
+
+local_decl ::= var_type IDENT array_decl ";"
+
+arraydecl ::= "[" INT_LIT "]" array_decl | epsilon
+
+primary ::= IDENT primary_suffix | "[" args "]" | "(" expr ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+
+primary_suffix ::= "(" args ")" | "[" expr "]" | epsilon

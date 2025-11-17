@@ -12,6 +12,11 @@ entry:
   %cos = alloca float, align 4
   %x1 = alloca float, align 4
   store float %x, ptr %x1, align 4
+  store float 0.000000e+00, ptr %cos, align 4
+  store float 0.000000e+00, ptr %n, align 4
+  store float 0.000000e+00, ptr %term, align 4
+  store float 0.000000e+00, ptr %eps, align 4
+  store float 0.000000e+00, ptr %alt, align 4
   store float 0x3EB0C6F7A0000000, ptr %eps, align 4
   store float 1.000000e+00, ptr %n, align 4
   store float 1.000000e+00, ptr %cos, align 4

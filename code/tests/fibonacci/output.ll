@@ -12,6 +12,11 @@ entry:
   %first = alloca i32, align 4
   %n1 = alloca i32, align 4
   store i32 %n, ptr %n1, align 4
+  store i32 0, ptr %first, align 4
+  store i32 0, ptr %second, align 4
+  store i32 0, ptr %next, align 4
+  store i32 0, ptr %c, align 4
+  store i32 0, ptr %total, align 4
   %n2 = load i32, ptr %n1, align 4
   %0 = call i32 @print_int(i32 %n2)
   store i32 0, ptr %first, align 4
