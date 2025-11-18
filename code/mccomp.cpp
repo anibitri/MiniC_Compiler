@@ -109,6 +109,7 @@ enum TOKEN_TYPE {
   INVALID = -100 // signal invalid token
 };
 
+// AST Formatting Helpers
 namespace {
   inline bool use_color() {
     static int cached = -1;
@@ -122,10 +123,10 @@ namespace {
   }
 
   // Colors
-  static constexpr const char* C_NODE  = "\033[1;36m"; // bright cyan
-  static constexpr const char* C_NAME  = "\033[1;35m"; // bright magenta
-  static constexpr const char* C_TYPE  = "\033[0;33m"; // yellow
-  static constexpr const char* C_VALUE = "\033[1;37m"; // bright white
+  static constexpr const char* C_NODE  = "\033[1;36m"; // bright cyan for nodes
+  static constexpr const char* C_NAME  = "\033[1;35m"; // bright magenta for names
+  static constexpr const char* C_TYPE  = "\033[0;33m"; // yellow for types
+  static constexpr const char* C_VALUE = "\033[1;37m"; // bright white for values
 
   inline std::string fmtNode(const std::string& kind) {
     return colorize(C_NODE, kind);
@@ -141,18 +142,14 @@ namespace {
   }
 
   // Prefix-format a multi-line child
-  inline std::string formatChild(const std::string& s,
-                                 const std::string& firstPrefix,
-                                 const std::string& nextPrefix) {
+  inline std::string formatChild(const std::string& s, const std::string& firstPrefix, const std::string& nextPrefix) {
     if (s.empty()) return firstPrefix + "<empty>";
     std::string out;
     size_t start = 0;
     bool first = true;
     while (true) {
       size_t nl = s.find('\n', start);
-      std::string line = (nl == std::string::npos)
-                           ? s.substr(start)
-                           : s.substr(start, nl - start);
+      std::string line = (nl == std::string::npos) ? s.substr(start) : s.substr(start, nl - start);
       out += (first ? firstPrefix : nextPrefix);
       out += line;
       if (nl == std::string::npos) break;
@@ -348,6 +345,8 @@ static TOKEN gettok() {
     columnNo++;
     return returnTok(",", COMMA);
   }
+
+  // Recognize brackets for array types and array indexing
   if (LastChar == '[') {
     LastChar = getc(pFile);
     columnNo++;
@@ -600,6 +599,7 @@ class ParamAST {
   std::vector<int> ArrayDimension;
 
 public:
+  // Two constructors: one for non-array params, one for array params
   ParamAST(const std::string &name, const std::string &type)
       : Name(name), Type(type) {}
 
@@ -610,6 +610,7 @@ public:
   const std::string &getName() const { return Name; }
   const std::string &getType() const { return Type; }
 
+  // Array related methods
   bool isArray() const { return !ArrayDimension.empty(); }
   const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
 
@@ -641,17 +642,19 @@ class VarDeclAST : public DeclAST {
   std::vector<int> ArrayDimension;
 
   public:
-  // Add a constructor that accepts dimensions
+
+  // Two constructors: one for non-array vars, one for array vars 
   VarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type,
              std::vector<int> arrayDimension)
       : Var(std::move(var)), Type(type), ArrayDimension(std::move(arrayDimension)) {}
 
-  // Keep a simple constructor if needed elsewhere
   VarDeclAST(std::unique_ptr<VariableASTnode> var, const std::string &type)
       : Var(std::move(var)), Type(type) {}
+
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
 
+  // Array related methods
   bool isArray() const { return !ArrayDimension.empty(); }
   const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
 
@@ -680,6 +683,8 @@ public:
       : Var(std::move(var)), Type(type), ArrayDimension(std::move(arrayDimension)) {}
   const std::string &getType() const { return Type; }
   const std::string &getName() const { return Var->getName(); }
+
+  // Array related methods
   bool isArray() const { return !ArrayDimension.empty(); }
   const std::vector<int> &getArrayDimension() const { return ArrayDimension; }
 
@@ -735,7 +740,7 @@ public:
 
 class ExprAST : public ASTnode {
   std::unique_ptr<ASTnode> Node1;
-  int Op;
+  int Op; // Turned into int to better represent operators
   std::unique_ptr<ASTnode> Node2;
 
 public:
@@ -921,46 +926,12 @@ public:
   virtual Value *codegen() override;
 };
 
-// ArrayCreationAST - Class for array creation
-class ArrayCreationAST : public ASTnode {
-  std::vector<std::unique_ptr<ASTnode>> Elements;
-
-
-  public: 
-  ArrayCreationAST(std::vector<std::unique_ptr<ASTnode>> elements)
-      : Elements() {
-        for (auto &elem : elements) {
-          Elements.push_back(std::move(elem));
-        }
-      }
-    
-    
-
-  virtual std::string to_string() const override {
-      std::string title = fmtNode("ArrayCreationAST");
-      if (Elements.empty()) return title + " []";
-
-      std::string result = title + "\n";
-
-      for (size_t i = 0; i < Elements.size(); ++i) {
-        const auto &elem = Elements[i];
-
-        std::string child = elem ? elem->to_string() : "<null>";
-        result += formatChild(child, (i + 1 < Elements.size()) ? "|- " : "`- ", (i + 1 < Elements.size()) ? "|  " : "   ");
-
-        if (i + 1 < Elements.size()) result += "\n";
-      }
-      return result;
-  }
-
-  virtual Value *codegen() override;
-};
 
 // ArrayAccessAST - Class for array access
 class ArrayAccessAST : public ASTnode{
-  std::unique_ptr<ASTnode> Base;
-  std::unique_ptr<ASTnode> Index;
-  llvm::Type *ElementType = nullptr;
+  std::unique_ptr<ASTnode> Base; // base array expression
+  std::unique_ptr<ASTnode> Index; // index expression
+  llvm::Type *ElementType = nullptr; // type of the array elements
 
   public: 
   ArrayAccessAST(std::unique_ptr<ASTnode> base, std::unique_ptr<ASTnode> index)
@@ -1026,6 +997,8 @@ static std::vector<std::unique_ptr<ASTnode>> ParseArgs();
 static std::vector<std::unique_ptr<ASTnode>> ParseArgListTail();
 static std::vector<int> ParseArrayDimensions();
 
+static std::vector<std::unique_ptr<ASTnode>> TopLevelDecls;
+
 // element ::= FLOAT_LIT
 static std::unique_ptr<ASTnode> ParseFloatNumberExpr() {
   auto Result = std::make_unique<FloatASTnode>(CurTok, CurTok.getFloatVal());
@@ -1047,8 +1020,7 @@ static std::unique_ptr<ASTnode> ParseBoolExpr() {
   return std::move(Result);
 }
 
-// param_list_prime ::= "," param param_list_prime
-//                   |  ε
+// param_list_prime ::= "," param param_list_prime |  ε
 static std::vector<std::unique_ptr<ParamAST>> ParseParamListPrime() {
   std::vector<std::unique_ptr<ParamAST>> param_list;
 
@@ -1160,53 +1132,41 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParams() {
 
 /*** TODO : Task 2 - Parser ***
 
-// args ::= arg_list
-//      |  ε
-// arg_list ::= arg_list "," expr
-//      | expr
-
-// rval ::= rval "||" rval
-//      | rval "&&" rval
-//      | rval "==" rval | rval "!=" rval
-//      | rval "<=" rval | rval "<" rval | rval ">=" rval | rval ">" rval
-//      | rval "+" rval | rval "-" rval
-//      | rval "*" rval | rval "/" rval | rval "%" rval
-//      | "-" rval | "!" rval
-//      | "(" expr ")"
-//      | IDENT | IDENT "(" args ")"
-//      | INT_LIT | FLOAT_LIT | BOOL_LIT
 **/
 
 // expr ::= left "=" expr | logical_or 
 // left::= IDENT | primarry_suffix
 static std::unique_ptr<ASTnode> ParseExper() {
-    auto LHS = ParseLogicalOr();
+    auto LHS = ParseLogicalOr(); // parse the left-hand side
     if (!LHS) return nullptr;
 
-    if (CurTok.type == ASSIGN) {
+    if (CurTok.type == ASSIGN) { // FIRST(left "=" expr)
       getNextToken(); // eat '='
       auto RHS = ParseExper();
       if (!RHS) return nullptr;
 
-      return std::make_unique<ExprAST>(std::move(LHS), ASSIGN, std::move(RHS));
+      // create and return assignment expression node
+      return std::make_unique<ExprAST>(std::move(LHS), ASSIGN, std::move(RHS)); 
     } 
 
+  // if not an assignment, just return the left-hand side
   return LHS;
 }
 
 // logical_or ::= logical_and logical_or_tail
 // logical_or_tail ::= "||" logical_and logical_or_tail | epsilon
 static std::unique_ptr<ASTnode> ParseLogicalOr() {
-  auto AND = ParseLogicalAnd();
+  auto AND = ParseLogicalAnd(); // parse the left-hand side
   if (!AND) return nullptr;
 
-  while (CurTok.type == OR) //FIRST(logical_or_tail)
+  while (CurTok.type == OR) // FIRST(logical_or_tail)
   {
     int Op = CurTok.type;
     getNextToken(); // eat '||'
     auto NextAND = ParseLogicalAnd();
     if (!NextAND) return nullptr;
 
+    // create and return logical OR expression node
     AND = std::make_unique<ExprAST>(std::move(AND), OR, std::move(NextAND));
   }
 
@@ -1216,15 +1176,16 @@ static std::unique_ptr<ASTnode> ParseLogicalOr() {
 // logical_and ::= equality logical_and_tail
 // logical_and_tail ::= "&&" equality logical_and_tail | epsilon
 static std::unique_ptr<ASTnode> ParseLogicalAnd() {
-  auto EQ = ParseEquality();
+  auto EQ = ParseEquality(); // parse the left-hand side
   if (!EQ) return nullptr;
 
-  while (CurTok.type == AND) {
+  while (CurTok.type == AND) { // FIRST(logical_and_tail)
     int Op = CurTok.type;
     getNextToken(); // eat '&&'
     auto NextEQ = ParseEquality();
     if (!NextEQ) return nullptr;
 
+    // create and return logical AND expression node
     EQ = std::make_unique<ExprAST>(std::move(EQ), AND, std::move(NextEQ));
   }
 
@@ -1234,15 +1195,16 @@ static std::unique_ptr<ASTnode> ParseLogicalAnd() {
 // equality ::= inequality equality_tail
 // equality_tail ::= "==" inequality equality_tail | "!=" inequality equality_tail | epsilon
 static std::unique_ptr<ASTnode> ParseEquality() {
-  auto INEQ = ParseInequality();
+  auto INEQ = ParseInequality(); // parse the left-hand side
   if (!INEQ) return nullptr;
 
-  while (CurTok.type == EQ || CurTok.type == NE) {
+  while (CurTok.type == EQ || CurTok.type == NE) { // FIRST(equality_tail)
     int Op = CurTok.type;
     getNextToken(); // eat '==' or '!='
     auto NextINEQ = ParseInequality();
     if (!NextINEQ) return nullptr;
 
+    // create and return equality expression node
     INEQ = std::make_unique<ExprAST>(std::move(INEQ), (Op == EQ) ? EQ : NE, std::move(NextINEQ));
   }
 
@@ -1252,15 +1214,16 @@ static std::unique_ptr<ASTnode> ParseEquality() {
 // inequality ::= term inequality_tail
 // inequality_tail ::= "<=" term inequality_tail | "<" term inequality_tail | ">=" term inequality_tail | ">" term inequality_tail | epsilon
 static std::unique_ptr<ASTnode> ParseInequality() {
-  auto TERM = ParseTerm();
+  auto TERM = ParseTerm(); // parse the left-hand side
   if (!TERM) return nullptr;
 
-  while (CurTok.type == LE || CurTok.type == LT || CurTok.type == GE || CurTok.type == GT) {
+  while (CurTok.type == LE || CurTok.type == LT || CurTok.type == GE || CurTok.type == GT) { // FIRST(inequality_tail)
     int Op = CurTok.type;
     getNextToken(); // eat '<=', '<', '>=', or '>'
     auto NextTERM = ParseTerm();
     if (!NextTERM) return nullptr;
 
+    // map operator to int
     int OpInt;
     switch (Op) {
       case LE: OpInt = LE; break;
@@ -1269,6 +1232,7 @@ static std::unique_ptr<ASTnode> ParseInequality() {
       case GT: OpInt = GT; break;
     }
 
+    // create and return inequality expression node
     TERM = std::make_unique<ExprAST>(std::move(TERM), OpInt, std::move(NextTERM));
   }
 
@@ -1278,15 +1242,16 @@ static std::unique_ptr<ASTnode> ParseInequality() {
 // term ::= factor term_tail
 // term_tail ::= "+" factor term_tail | "-" factor term_tail | epsilon
 static std::unique_ptr<ASTnode> ParseTerm() {
-  auto factor = ParseFactor();
+  auto factor = ParseFactor(); // parse the left-hand side
   if (!factor) return nullptr;
 
-  while (CurTok.type == PLUS || CurTok.type == MINUS) {
+  while (CurTok.type == PLUS || CurTok.type == MINUS) { // FIRST(term_tail)
     int Op = CurTok.type;
     getNextToken(); // eat '+' or '-'
     auto NextFactor = ParseFactor();
     if (!NextFactor) return nullptr;
 
+    // create and return term expression node
     factor = std::make_unique<ExprAST>(std::move(factor), (Op == PLUS) ? PLUS : MINUS, std::move(NextFactor));
   }
 
@@ -1296,15 +1261,16 @@ static std::unique_ptr<ASTnode> ParseTerm() {
 // factor ::= unary factor_tail
 // factor_tail ::= "*" unary factor_tail | "/" unary factor_tail | "%" unary factor_tail | epsilon
 static std::unique_ptr<ASTnode> ParseFactor() {
-  auto unary = ParseUnary();
+  auto unary = ParseUnary(); // parse the left-hand side
   if (!unary) return nullptr;
 
-  while (CurTok.type == ASTERIX || CurTok.type == DIV || CurTok.type == MOD) {
+  while (CurTok.type == ASTERIX || CurTok.type == DIV || CurTok.type == MOD) { // FIRST(factor_tail)
     int Op = CurTok.type;
     getNextToken(); // eat '*', '/', or '%'
     auto NextUnary = ParseUnary();
     if (!NextUnary) return nullptr;
     
+    // map operator to int
     int OpInt;
     switch (Op) {
       case ASTERIX: OpInt = ASTERIX; break;
@@ -1312,6 +1278,7 @@ static std::unique_ptr<ASTnode> ParseFactor() {
       case MOD: OpInt = MOD; break;
     }
 
+    // create and return factor expression node
     unary = std::make_unique<ExprAST>(std::move(unary), OpInt, std::move(NextUnary));
   }
 
@@ -1320,7 +1287,7 @@ static std::unique_ptr<ASTnode> ParseFactor() {
 
 // unary ::= "-" unary | "!" unary | primary
 static std::unique_ptr<ASTnode> ParseUnary() {
-  if (CurTok.type == MINUS) {
+  if (CurTok.type == MINUS) { // FIRST(unary)
     // Lower "-x" into "0 - x"
     TOKEN zeroTok;
     zeroTok.type = INT_LIT;
@@ -1332,9 +1299,10 @@ static std::unique_ptr<ASTnode> ParseUnary() {
     auto operand = ParseUnary();
     if (!operand) return nullptr;
 
+    // create and return unary expression node
     auto lhs = std::make_unique<IntASTnode>(zeroTok, 0);
     return std::make_unique<ExprAST>(std::move(lhs), MINUS, std::move(operand));
-  } else if (CurTok.type == NOT) {
+  } else if (CurTok.type == NOT) { // FIRST(unary)
     // Lower "!x" into "x == false"
     TOKEN falseTok;
     falseTok.type = BOOL_LIT;
@@ -1346,9 +1314,10 @@ static std::unique_ptr<ASTnode> ParseUnary() {
     auto operand = ParseUnary();
     if (!operand) return nullptr;
 
+    // create and return unary expression node
     auto rhs = std::make_unique<BoolASTnode>(falseTok, false);
     return std::make_unique<ExprAST>(std::move(operand), EQ, std::move(rhs));
-  } else {
+  } else { // FIRST(primary)
     return ParsePrimary();
   }
 }
@@ -1356,7 +1325,7 @@ static std::unique_ptr<ASTnode> ParseUnary() {
 // primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
 // primary ::= IDENT primary_suffix | "(" expr ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
 static std::unique_ptr<ASTnode> ParsePrimary() {
-  if (CurTok.type == LPAR) {
+  if (CurTok.type == LPAR) { 
     getNextToken(); // eat '('
     auto expr = ParseExper();
     if (!expr) return nullptr;
@@ -1371,7 +1340,7 @@ static std::unique_ptr<ASTnode> ParsePrimary() {
 
     return ParsePrimarySuffix(idTok);
     
-  } else if (CurTok.type == INT_LIT) {
+  } else if (CurTok.type == INT_LIT) { 
     return ParseIntNumberExpr();
   } else if (CurTok.type == FLOAT_LIT) {
     return ParseFloatNumberExpr();
@@ -1384,6 +1353,7 @@ static std::unique_ptr<ASTnode> ParsePrimary() {
 
 //primary_suffix ::= "(" args ")" | "[" expr "]" | epsilon
 static std::unique_ptr<ASTnode> ParsePrimarySuffix(TOKEN idTok) {
+  // at this point, we have seen an IDENT token so create a VariableASTnode
   std::unique_ptr<ASTnode> node = std::make_unique<VariableASTnode>(idTok, idTok.getIdentifierStr());
 
   if (CurTok.type == LPAR) { // function call
@@ -1393,6 +1363,8 @@ static std::unique_ptr<ASTnode> ParsePrimarySuffix(TOKEN idTok) {
     if (CurTok.type != RPAR)
       return LogError(CurTok, "expected ')' after function call arguments");
     getNextToken(); // eat ')'
+
+    // make ArgsAST node
     node = std::make_unique<ArgsAST>(idTok.getIdentifierStr(), std::move(args));
   }
   
@@ -1404,10 +1376,11 @@ static std::unique_ptr<ASTnode> ParsePrimarySuffix(TOKEN idTok) {
     if (CurTok.type != RBOX)
       return LogError(CurTok, "expected ']' after array index expression");
     getNextToken(); // eat ']'
+
+    // make ArrayAccessAST node
     node = std::make_unique<ArrayAccessAST>(std::move(node), std::move(indexExpr));
   } 
-
-
+  
   return node;
 }
 
@@ -1804,7 +1777,7 @@ static std::vector<int> ParseArrayDimensions() {
     }
     getNextToken(); // eat ']'
   }
-  // if no dimensions were found, return nullptr
+  // if no dimensions were found, return empty vector
   if (dimensions.size() > 3) {
     LogError(CurTok, "arrays with more than 3 dimensions are not supported");
     return {};
@@ -1870,8 +1843,6 @@ static std::unique_ptr<ASTnode> ParseBlock() {
 }
 
 
-static std::vector<std::unique_ptr<ASTnode>> TopLevelDecls;
-
 
 // decl ::= var_decl
 //       |  fun_decl
@@ -1890,7 +1861,7 @@ static std::unique_ptr<ASTnode> ParseDecl() {
     if (CurTok.type == IDENT) {
       auto ident = std::make_unique<VariableASTnode>(CurTok, IdName);
       getNextToken(); // eat the IDENT
-      auto dimensions = ParseArrayDimensions();
+      auto dimensions = ParseArrayDimensions(); // parse any array dimensions
       if (CurTok.type == SC) {         // found ';' then this is a global variable declaration.
 
         getNextToken(); // eat ;
@@ -1899,7 +1870,8 @@ static std::unique_ptr<ASTnode> ParseDecl() {
         if (PrevTok.type == VOID_TOK) {
             return LogError(PrevTok, "Cannot have variable declaration with type 'void'");
         }
-    
+        
+        // error check: if the decl has array dimensions, the type must be int or float
         if (!dimensions.empty() && PrevTok.type == BOOL_TOK) {
           return LogError(PrevTok, "only 'int' and 'float' types can be declared as arrays");
         }
@@ -2047,7 +2019,7 @@ static void ParseExternListPrime() {
 
   if (CurTok.type == EXTERN) { // FIRST(extern)
     if (auto Extern = ParseExtern()) {
-      Extern ->codegen();
+      Extern->codegen(); // generate code for the extern function prototype
       fprintf(stderr,
               "Parsed a top-level external function declaration -- 2\n");
     }
@@ -2067,6 +2039,7 @@ static void ParseExternList() {
   auto Extern = ParseExtern();
   
   if (Extern) {
+    // generate code for the extern function prototype
     llvm::outs() << Extern->to_string() << "\n";
     llvm::outs() << Extern->codegen() << "\n";
     fprintf(stderr, "Parsed a top-level external function declaration -- 1\n");
@@ -2097,11 +2070,12 @@ static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
 
-static std::map<std::string, AllocaInst*> NamedValues;
-static std::map<std::string, Value *> GlobalNamedValues;
+static std::map<std::string, AllocaInst*> NamedValues; // current function scope
+static std::map<std::string, Value *> GlobalNamedValues; // global scope
+static std::map<std::string, llvm::Type*> VarDeclaredTypes; // variable types
 
-static std::map<std::string, llvm::Type*> VarDeclaredTypes;
 
+// Get a function from the current module or the global function table
 Function *getFunction(std::string Name) {
   // First, see if the function has already been added to the current module.
   if (auto *F = TheModule->getFunction(Name))
@@ -2113,6 +2087,7 @@ Function *getFunction(std::string Name) {
   return nullptr;
 }
 
+// Helper function to map our language types to LLVM types
 static Type* getLLVMType(const std::string& typeStr) {
   if (typeStr == "int") {
     return Type::getInt32Ty(TheContext);
@@ -2127,20 +2102,38 @@ static Type* getLLVMType(const std::string& typeStr) {
   }
 }
 
-static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
-                                         const std::string &VarName,
-                                        Type* type) {
-  IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
-                   TheFunction->getEntryBlock().begin());
+// Create an alloca instruction in the entry block of the function.
+static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &VarName, Type* type) {
+  IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
   return TmpB.CreateAlloca(type, nullptr, VarName);
 }
 
+// Log an error and return a null LLVM value
 Value *LogErrorV(TOKEN Tok, const char *Str) {
   LogError(Tok, Str);
   return nullptr;
 }
 
-Value *FunctionDeclAST::codegen() {
+// Find an alloca instruction by name in the entry block of the current function
+static AllocaInst* FindAllocaInEntryByName(const std::string& name) {
+  auto *BB = Builder.GetInsertBlock();
+  if(!BB) return nullptr;
+  Function *F = BB->getParent();
+  if(!F) return nullptr;
+
+  BasicBlock &Entry = F->getEntryBlock();
+  for (Instruction &I : Entry) {
+    if (auto *Alloca = dyn_cast<AllocaInst>(&I)) {
+      if (Alloca->getName() == name) {
+        return Alloca;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+Value *FunctionDeclAST::codegen() { // code generation for function definition
   Function *F = Proto->codegen();
   if (!F) {
     return nullptr;
@@ -2150,6 +2143,7 @@ Value *FunctionDeclAST::codegen() {
     return LogErrorV(CurTok, "Function cannot be redefined.");
   }
 
+  // Create a new basic block to start insertion into.
   BasicBlock *EntryBB = BasicBlock::Create(TheContext, "entry", F);
   Builder.SetInsertPoint(EntryBB);
 
@@ -2157,7 +2151,7 @@ Value *FunctionDeclAST::codegen() {
 
   auto &params = Proto->getParams();
   unsigned argidx = 0;
-  for (auto &Arg : F->args()) {
+  for (auto &Arg : F->args()) { // name the function arguments
     AllocaInst *Alloca = CreateEntryBlockAlloca(F, std::string(Arg.getName()), Arg.getType());
     Builder.CreateStore(&Arg, Alloca);
     NamedValues[std::string(Arg.getName())] = Alloca;
@@ -2172,9 +2166,10 @@ Value *FunctionDeclAST::codegen() {
     }
     argidx++;
   }
-
+  // Generate code for the function body
   if (Block) Block->codegen();
 
+  // Ensure the function has a terminating return instruction
   if (!EntryBB->getTerminator()) {
     if (F->getReturnType()->isVoidTy()) {
       Builder.CreateRetVoid();
@@ -2191,15 +2186,15 @@ Value *FunctionDeclAST::codegen() {
   return F;
 }
 
-Function *FunctionPrototypeAST::codegen() {
-  // Build function type
+Function *FunctionPrototypeAST::codegen() { // code generation for function prototype
   std::vector<llvm::Type*> ArgTypes;
-  for (auto &P : Params) {
+  for (auto &P : Params) { // for each parameter push its type to ArgTypes
     llvm::Type* base = getLLVMType(P->getType());
     if (!base) return nullptr;
 
     llvm::Type* paramType = base;
 
+    // handle array parameters
     if (P->isArray()) {
       for (auto it = P->getArrayDimension().rbegin(); it != P->getArrayDimension().rend(); ++it) {
         paramType = llvm::ArrayType::get(paramType, *it);
@@ -2222,13 +2217,14 @@ Function *FunctionPrototypeAST::codegen() {
   return F;
 }
 
-Value *GlobVarDeclAST::codegen() {
+Value *GlobVarDeclAST::codegen() { // code generation for global variable declaration
   llvm::Type* baseType = getLLVMType(Type);
   
   if(!baseType) {
     return nullptr;
   }
 
+  // handle array type
   llvm::Type *varType = baseType;
   if(!getArrayDimension().empty()) {
     for(auto i = getArrayDimension().rbegin(); i != getArrayDimension().rend(); ++i) {
@@ -2236,6 +2232,7 @@ Value *GlobVarDeclAST::codegen() {
     }
   } 
 
+  // Initialize the global variable
   Constant *init = nullptr;
   if(isa<ArrayType>(varType)) {
     init = ConstantAggregateZero::get(varType);
@@ -2245,20 +2242,21 @@ Value *GlobVarDeclAST::codegen() {
   auto *GlobalVariable = new llvm::GlobalVariable (*TheModule, varType, false, GlobalValue::ExternalLinkage, init, getName());
   GlobalNamedValues[getName()] = GlobalVariable;
 
+  // Store the declared type if it's an array
   if (isa<ArrayType>(varType)) {
     VarDeclaredTypes[getName()] = varType;
   }
   return GlobalVariable;
 }
 
-Value *ExprAST::codegen() {
-  if(Op == ASSIGN) {
+Value *ExprAST::codegen() { // code generation for binary expressions
+  if(Op == ASSIGN) { 
   if (auto *Var = dynamic_cast<VariableASTnode*>(Node1.get())) {
     
     Value *RHS = Node2->codegen();
     if(!RHS) return nullptr;
 
-    
+    // Handle type conversion for assignment
     if(auto *Local = NamedValues[Var->getName()]) {
       llvm::Type *DestinationType = Local->getAllocatedType();
       if(DestinationType->isFloatTy() && RHS->getType()->isIntegerTy(32)){
@@ -2270,6 +2268,7 @@ Value *ExprAST::codegen() {
       return RHS;
     }
 
+    // Check for global variable
     auto it = GlobalNamedValues.find(Var->getName());
     if (it != GlobalNamedValues.end()) {
       printf("Found global variable: %s\n", Var->getName().c_str());
@@ -2290,7 +2289,7 @@ Value *ExprAST::codegen() {
     return LogErrorV(CurTok, "unknown variable name in assignment");
   }
 
-
+  // Handle array element assignment
   if(auto *Arr = dynamic_cast<ArrayAccessAST*>(Node1.get())) {
     Value *ArrayPtr = Arr->codegenaddress();
     if(!ArrayPtr) return nullptr;
@@ -2312,19 +2311,21 @@ Value *ExprAST::codegen() {
     return LogErrorV(CurTok, "destination of assignment must be a variable or array access");
   }
 
-
+  // Generate code for left and right operands
   Value *L = Node1->codegen();
   Value *R = Node2->codegen();
 
   if (!L || !R)
     return nullptr;
 
+  // Promote integer operands to floating point if necessary
   auto promoteFP = [&](Value*& X) {
     if (X->getType()->isIntegerTy(32)) {
       X = Builder.CreateSIToFP(X, Type::getDoubleTy(TheContext));
     }
   };
 
+  // Determine if the operation involves floating point
   bool isFloatL = L->getType()->isFloatingPointTy();
   bool isFloatR = R->getType()->isFloatingPointTy();
   bool floatOp = isFloatL || isFloatR;
@@ -2339,6 +2340,7 @@ Value *ExprAST::codegen() {
     }
   }
 
+  // Generate the appropriate LLVM instruction based on the operator
   switch (Op) {
   case PLUS:
     return floatOp ? Builder.CreateFAdd(L, R, "addtmp") : Builder.CreateAdd(L, R, "addtmp");
@@ -2391,13 +2393,14 @@ Value *ExprAST::codegen() {
   return LogErrorV(CurTok, "invalid binary operator");
 }
 
-Value *BlockAST::codegen() {
+Value *BlockAST::codegen() { // code generation for block
   std::map<std::string, AllocaInst*> OldScope = NamedValues;
 
   Function *F = Builder.GetInsertBlock()->getParent();
-  for (auto &Decl : LocalDecls) {
+  for (auto &Decl : LocalDecls) { // for each local variable declaration allocate space in the entry block
     llvm::Type* basetype = getLLVMType(Decl->getType());
 
+    // handle array type
     llvm::Type *allocType = basetype;
     if (Decl->isArray()) {
       for (auto it = Decl->getArrayDimension().rbegin(); it != Decl->getArrayDimension().rend(); ++it) {
@@ -2408,10 +2411,11 @@ Value *BlockAST::codegen() {
     AllocaInst *Alloca = CreateEntryBlockAlloca(F, Decl->getName(), allocType);
     NamedValues[Decl->getName()] = Alloca;
 
+    // Store the declared type if it's an array
     if(Decl->isArray()) {
       auto *zero = isa<ArrayType>(allocType) ? ConstantAggregateZero::get(allocType) : Constant::getNullValue(allocType);
       Builder.CreateStore(zero, Alloca);
-    } else {
+    } else { // initialize non-array variables to zero/false
       Constant *zero = nullptr;
       if (allocType->isIntegerTy(32)) {
         zero = ConstantInt::get(Type::getInt32Ty(TheContext), 0);
@@ -2424,6 +2428,7 @@ Value *BlockAST::codegen() {
     }
   }
 
+  // Generate code for each statement in the block
   Value *Last = nullptr;
   for (auto &Stmt : Stmts) {
     if(Stmt) {
@@ -2435,33 +2440,30 @@ Value *BlockAST::codegen() {
   return Last;
 }
 
-static AllocaInst* FindAllocaInEntryByName(const std::string& name) {
-  auto *BB = Builder.GetInsertBlock();
-  if(!BB) return nullptr;
-  Function *F = BB->getParent();
-  if(!F) return nullptr;
 
-  BasicBlock &Entry = F->getEntryBlock();
-  for (Instruction &I : Entry) {
-    if (auto *Alloca = dyn_cast<AllocaInst>(&I)) {
-      if (Alloca->getName() == name) {
-        return Alloca;
-      }
-    }
-  }
-
-  return nullptr;
-}
-
-Value *ArrayAccessAST::codegenaddress() {
+Value *ArrayAccessAST::codegenaddress() { // code generation for array access address
   Value *basePtr = nullptr;
   llvm::Type *elementType = nullptr;
 
+  // Determine the base pointer and element type
   if (auto *Var = dynamic_cast<VariableASTnode*>(Base.get())) {
     const std::string &name = Var->getName();
-    printf("Generating code for array access base variable: %s\n", Var->getName().c_str());
-    if (auto *Alloca = NamedValues[name]) {
-      printf("Found local variable for array access: %s\n", Var->getName().c_str());
+    if (auto *Alloca = NamedValues[name]) { // local variable
+      basePtr = Alloca;
+      elementType = Alloca->getAllocatedType();
+
+      if (elementType->isPointerTy()) { // handle pointer to array
+        auto it = VarDeclaredTypes.find(name);
+        if(it == VarDeclaredTypes.end()) {
+          return LogErrorV(CurTok, "could not find declared type for pointer array variable");
+        }
+        elementType = it->second; 
+        Value *loadedPtr = Builder.CreateLoad(Alloca->getAllocatedType(), Alloca, name + "_loadedptr");
+        basePtr = loadedPtr;
+        
+      }
+    } else if (auto *Alloca = FindAllocaInEntryByName(name)) { // check in entry block for local variable
+
       basePtr = Alloca;
       elementType = Alloca->getAllocatedType();
 
@@ -2475,35 +2477,19 @@ Value *ArrayAccessAST::codegenaddress() {
         basePtr = loadedPtr;
         
       }
-    } else if (auto *Alloca = FindAllocaInEntryByName(name)) {
-
-      basePtr = Alloca;
-      elementType = Alloca->getAllocatedType();
-
-      if (elementType->isPointerTy()) {
-        auto it = VarDeclaredTypes.find(name);
-        if(it == VarDeclaredTypes.end()) {
-          return LogErrorV(CurTok, "could not find declared type for pointer array variable");
-        }
-        elementType = it->second; 
-        Value *loadedPtr = Builder.CreateLoad(Alloca->getAllocatedType(), Alloca, name + "_loadedptr");
-        basePtr = loadedPtr;
-        
-      }
-    } else if (auto it = GlobalNamedValues.find(name); it != GlobalNamedValues.end()) {
-        printf("Found global variable for array access: %s\n", Var->getName().c_str());
+    } else if (auto it = GlobalNamedValues.find(name); it != GlobalNamedValues.end()) { // global variable
         if (auto *GlobalVariable = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
           basePtr = GlobalVariable;
           elementType = GlobalVariable->getValueType();
         } 
     }
 
-    printf("Base pointer: %p, Element type: %p\n", basePtr, elementType);
+    // Error if variable not found
     if (!basePtr || !elementType) {
       return LogErrorV(CurTok, "Unknown variable name in array access");
     }
 
-  } else if (auto *ArrayAccess = dynamic_cast<ArrayAccessAST*>(Base.get())) {
+  } else if (auto *ArrayAccess = dynamic_cast<ArrayAccessAST*>(Base.get())) { // nested array access
     basePtr = ArrayAccess->codegenaddress();
     if (!basePtr) return nullptr;
     elementType = ArrayAccess->getElementType();
@@ -2512,6 +2498,7 @@ Value *ArrayAccessAST::codegenaddress() {
     return LogErrorV(CurTok, "Array base must be a variable or another array access");
   } 
 
+  // Generate code for the index expression
   Value *idx = Index->codegen();
   if (!idx) return nullptr;
 
@@ -2523,6 +2510,7 @@ Value *ArrayAccessAST::codegenaddress() {
     idx = Builder.CreateIntCast(idx, Type::getInt32Ty(TheContext), true);
   }
 
+  // Generate GEP instruction to get the address of the array element
   if (auto *arrType = llvm::dyn_cast<llvm::ArrayType>(elementType)) {
     Value *zero = ConstantInt::get(llvm::Type::getInt32Ty(TheContext), 0);
     Value *ptr = Builder.CreateInBoundsGEP(elementType, basePtr, {zero, idx}, "arrayidx");
@@ -2535,7 +2523,7 @@ Value *ArrayAccessAST::codegenaddress() {
   }
 }
 
-Value *ArrayAccessAST::codegen() {
+Value *ArrayAccessAST::codegen() { // code generation for array access value
   Value *addr = codegenaddress();
   if (!addr) return nullptr;
 
@@ -2546,24 +2534,29 @@ Value *ArrayAccessAST::codegen() {
   return Builder.CreateLoad(ElementType, addr, "arrayload");
 }
 
-Value *IfExprAST::codegen() {
-  Value *ConditionValue = Cond->codegen();
+Value *IfExprAST::codegen() { // code generation for if expression
+  Value *ConditionValue = Cond->codegen(); // generate code for condition
   if (!ConditionValue) return nullptr;
 
+  // Convert condition to a boolean if necessary
   ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0), "ifcond");
 
+  // Create blocks for then, else and merge
   Function *F = Builder.GetInsertBlock()->getParent();
   BasicBlock *ThenBB = BasicBlock::Create(TheContext, "then", F);
   BasicBlock *ElseBB = Else ? BasicBlock::Create(TheContext, "else", F) : nullptr;
   BasicBlock *MergeBB = BasicBlock::Create(TheContext, "ifcont", F);
 
+  // Create conditional branch based on the condition
   Builder.CreateCondBr(ConditionValue, ThenBB, Else ? ElseBB : MergeBB);
 
+  // Generate code for then block
   Builder.SetInsertPoint(ThenBB);
   Value *ThenValue = Then->codegen();
   (void)ThenValue;
   Builder.CreateBr(MergeBB);
 
+  // Generate code for else block if it exists
   Value *ElseValue = nullptr;
   if (Else) {
     Builder.SetInsertPoint(ElseBB);
@@ -2576,77 +2569,91 @@ Value *IfExprAST::codegen() {
   return Constant::getNullValue(Type::getInt32Ty(TheContext));  
 }
 
-Value *WhileExprAST::codegen() {
-  Function *F = Builder.GetInsertBlock()->getParent();
+Value *WhileExprAST::codegen() { // code generation for while expression
+  // Get the current function
+  Function *F = Builder.GetInsertBlock()->getParent(); 
 
+  // Create basic blocks for condition, body, and end
   BasicBlock *ConditionBB = BasicBlock::Create(TheContext, "while.cond", F);
   BasicBlock *BodyBB = BasicBlock::Create(TheContext, "while.body", F);
   BasicBlock *EndBB = BasicBlock::Create(TheContext, "while.end", F);
 
+  // Initial branch to the condition check
   Builder.CreateBr(ConditionBB);
 
+  // Generate code for the condition
   Builder.SetInsertPoint(ConditionBB);
   Value *ConditionValue = Cond->codegen();
   if (!ConditionValue) return nullptr;
 
+  // Convert condition to boolean if necessary
   if(ConditionValue->getType()->isIntegerTy(1)) {
-
+    // do nothing, already boolean
   } else if(ConditionValue->getType()->isIntegerTy()) {
     ConditionValue = Builder.CreateICmpNE(ConditionValue, ConstantInt::get(ConditionValue->getType(), 0));
   } else if(ConditionValue->getType()->isFloatingPointTy()) {
     ConditionValue = Builder.CreateFCmpONE(ConditionValue, ConstantFP::get(ConditionValue->getType(), 0.0));
   } 
 
+  // Create conditional branch based on the condition
   Builder.CreateCondBr(ConditionValue, BodyBB, EndBB);
 
+  // Generate code for the body of the while loop
   Builder.SetInsertPoint(BodyBB);
   if (Body) Body->codegen();
   Builder.CreateBr(ConditionBB);
 
+  // Continue with the code after the while loop
   Builder.SetInsertPoint(EndBB);
   return Constant::getNullValue(Type::getInt32Ty(TheContext));
 }
 
-Value *ReturnAST::codegen() {
-  if(!Val) {
+Value *ReturnAST::codegen() { // code generation for return statement
+  if(!Val) { // void return
     Builder.CreateRetVoid();
     return nullptr;
   }
 
+  // return with value
   Value *V = Val->codegen();
   Builder.CreateRet(V);
   return V;
 }
 
-Value *ArgsAST::codegen() {
+Value *ArgsAST::codegen() { // code generation for function call arguments
+  // Get the function being called
   Function *CalleeF = getFunction(Callee);
   if (!CalleeF) CalleeF = TheModule->getFunction(Callee);
   if (!CalleeF) return LogErrorV(CurTok, "Unknown function referenced");
 
+  // Check for correct number of arguments
   if (CalleeF->arg_size() != ArgsList.size())
     return LogErrorV(CurTok, "Incorrect # arguments passed");
 
+  // Generate code for each argument
   std::vector<Value *> ArgsV;
   for (size_t i = 0; i<ArgsList.size(); ++i) {
     llvm::Type* ParamType = CalleeF->getFunctionType()->getParamType(i);
     Value *ArgValue = nullptr;
 
+    // Special handling for pointer parameters
     if (ParamType->isPointerTy()) {
-      if (auto *Var = dynamic_cast<VariableASTnode*>(ArgsList[i].get())) {
+      if (auto *Var = dynamic_cast<VariableASTnode*>(ArgsList[i].get())) { // if argument is a variable
         const std::string &name = Var->getName();
-        if (auto *Alloca = NamedValues[name]) {
+        if (auto *Alloca = NamedValues[name]) { // local variable
           llvm::Type *allocType = Alloca->getAllocatedType();
-          if (allocType->isArrayTy()) {
+          if (allocType->isArrayTy()) { // array type
             ArgValue = Alloca;
-          } else if (allocType->isPointerTy()) {
+          } else if (allocType->isPointerTy()) { // pointer to array
             ArgValue = Builder.CreateLoad(allocType, Alloca, name + ".argptr");
           }
-        } else if (auto it = GlobalNamedValues.find(name); it!= GlobalNamedValues.end()) {
+        } else if (auto it = GlobalNamedValues.find(name); it!= GlobalNamedValues.end()) { // global variable
           ArgValue = it->second;
         }
       }
     }
 
+    // General argument code generation
     if (!ArgValue) {
       ArgValue = ArgsList[i]->codegen();
       if (!ArgValue)
@@ -2665,20 +2672,19 @@ Value *ArgsAST::codegen() {
   return Builder.CreateCall(CalleeF, ArgsV);
 }
 
-Value *IntASTnode::codegen() {
+Value *IntASTnode::codegen() { // code generation for integer literal
   return ConstantInt::get(TheContext, APInt(32, Val, true));
 }
 
-Value *FloatASTnode::codegen() {
+Value *FloatASTnode::codegen() { // code generation for float literal
   return ConstantFP::get(Type::getFloatTy(TheContext), Val);
 }
 
-Value *BoolASTnode::codegen() {
+Value *BoolASTnode::codegen() { // code generation for boolean literal
   return ConstantInt::get(TheContext, APInt(1, Bool, false));
 }
 
-Value *VariableASTnode::codegen() {
-  // Look this variable up in the function.
+Value *VariableASTnode::codegen() { // code generation for variable
   if (auto *A = NamedValues[Name]) {
     return Builder.CreateLoad(A->getAllocatedType(), A, Name.c_str());
   }
