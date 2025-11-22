@@ -32,3 +32,5 @@ install_manifest.txt
 
 *.ll
 *.s
+
+report/*

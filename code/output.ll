@@ -3,44 +3,38 @@ source_filename = "mini-c"
 
 declare i32 @print_int(i32)
 
-define i32 @vector_total(ptr %a, ptr %b, i32 %n) {
+define i32 @addition(i32 %n, i32 %m) {
 entry:
-  %total = alloca i32, align 4
-  %i = alloca i32, align 4
-  %n3 = alloca i32, align 4
-  %b2 = alloca ptr, align 8
-  %a1 = alloca ptr, align 8
-  store ptr %a, ptr %a1, align 8
-  store ptr %b, ptr %b2, align 8
-  store i32 %n, ptr %n3, align 4
-  store i32 0, ptr %i, align 4
-  br label %while.cond
+  %result = alloca i32, align 4
+  %m2 = alloca i32, align 4
+  %n1 = alloca i32, align 4
+  store i32 %n, ptr %n1, align 4
+  store i32 %m, ptr %m2, align 4
+  store i32 0, ptr %result, align 4
+  %n3 = load i32, ptr %n1, align 4
+  %m4 = load i32, ptr %m2, align 4
+  %addtmp = add i32 %n3, %m4
+  store i32 %addtmp, ptr %result, align 4
+  %n5 = load i32, ptr %n1, align 4
+  %eqtmp = icmp eq i32 %n5, 4
+  %ifcond = icmp ne i1 %eqtmp, false
+  br i1 %ifcond, label %then, label %else
 
-while.cond:                                       ; preds = %while.body, %entry
-  %i4 = load i32, ptr %i, align 4
-  %n5 = load i32, ptr %n3, align 4
-  %lttmp = icmp slt i32 %i4, %n5
-  br i1 %lttmp, label %while.body, label %while.end
+then:                                             ; preds = %entry
+  %n6 = load i32, ptr %n1, align 4
+  %m7 = load i32, ptr %m2, align 4
+  %addtmp8 = add i32 %n6, %m7
+  %0 = call i32 @print_int(i32 %addtmp8)
+  br label %ifcont
 
-while.body:                                       ; preds = %while.cond
-  %total6 = load i32, ptr %total, align 4
-  %a_loadedptr = load ptr, ptr %a1, align 8
-  %i7 = load i32, ptr %i, align 4
-  %arrayidx = getelementptr inbounds [10 x i32], ptr %a_loadedptr, i32 0, i32 %i7
-  %arrayload = load i32, ptr %arrayidx, align 4
-  %addtmp = add i32 %total6, %arrayload
-  %b_loadedptr = load ptr, ptr %b2, align 8
-  %i8 = load i32, ptr %i, align 4
-  %arrayidx9 = getelementptr inbounds [10 x i32], ptr %b_loadedptr, i32 0, i32 %i8
-  %arrayload10 = load i32, ptr %arrayidx9, align 4
-  %addtmp11 = add i32 %addtmp, %arrayload10
-  store i32 %addtmp11, ptr %total, align 4
-  %i12 = load i32, ptr %i, align 4
-  %addtmp13 = add i32 %i12, 1
-  store i32 %addtmp13, ptr %i, align 4
-  br label %while.cond
+else:                                             ; preds = %entry
+  %n9 = load i32, ptr %n1, align 4
+  %m10 = load i32, ptr %m2, align 4
+  %multmp = mul i32 %n9, %m10
+  %1 = call i32 @print_int(i32 %multmp)
+  br label %ifcont
 
-while.end:                                        ; preds = %while.cond
-  %total14 = load i32, ptr %total, align 4
-  ret i32 %total14
+ifcont:                                           ; preds = %else, %then
+  %result11 = load i32, ptr %result, align 4
+  ret i32 %result11
 }

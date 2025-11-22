@@ -1,4 +1,4 @@
- program ::= extern_list decl_list | decl_list
+program ::= extern_list decl_list | decl_list
 
 extern_list ::= extern extern_list_tail
 extern_list_tail ::= extern extern_list_tail | epsilon
@@ -8,51 +8,52 @@ extern ::= "extern" type_spec IDENT "(" params ")" ";"
 decl_list ::= decl decl_list_tail
 decl_list_tail ::= decl decl_list_tail | epsilon
 
-decl ::= var_decl   |  fun_decl
+decl ::= var_decl | fun_decl
 
 var_decl ::= var_type IDENT ";" 
 
-type_spec ::= "void" |  var_type           
+type_spec ::= "void" | var_type           
 
-var_type  ::= "int" |  "float" |  "bool"
+var_type  ::= "int" | "float" | "bool"
 
 fun_decl ::= type_spec IDENT "(" params ")" block
 
-params ::= param_list  |  "void" | epsilon
+params ::= param_list | "void" | epsilon
     
 param_list ::= param param_list_tail 
 param_list_tail ::= "," param param_list_tail | epsilon
   
-param ::= var_type IDENT array_suffix
-array_suffix ::= "[" num "]" array_suffix | epsilon
+param ::= var_type IDENT array_decl
 
 block ::= "{" local_decls stmt_list "}"
 
 local_decls ::= epsilon local_decls_tail
 local_decls_tail ::= local_decl local_decls_tail | epsilon
 
-local_decl ::= var_type IDENT ";"
+local_decl ::= var_type IDENT array_decl ";"
+
+arraydecl ::= "[" INT_LIT "]" array_decl | epsilon
 
 stmt_list ::= epsilon stmt_list_tail
 stmt_list_tail ::= stmt stmt_list_tail | epsilon
 
-stmt ::= expr_stmt   |  block   |  if_stmt   |  while_stmt   |  return_stmt
+stmt ::= expr_stmt | block | if_stmt | while_stmt | return_stmt
 
-expr_stmt ::= expr ";"  |  ";"
+expr_stmt ::= expr ";" | ";"
 
 while_stmt ::= "while" "(" expr ")" stmt 
 
 if_stmt ::= "if" "(" expr ")" block else_stmt
 
-else_stmt  ::= "else" block  |  epsilon
+else_stmt  ::= "else" block | epsilon
 
-return_stmt ::= "return" ";"    |  "return" expr ";"    
+return_stmt ::= "return" ";" | "return" expr ";"    
 
 
 #### operators with precedence and no left recursion####
 
 expr ::= left "=" expr | logical_or 
-left::= IDENT | primarry_suffix
+left::= IDENT array_decl
 
 logical_or ::= logical_and logical_or_tail
 logical_or_tail ::= "||" logical_and logical_or_tail | epsilon
@@ -74,7 +75,8 @@ factor_tail ::= "*" unary factor_tail | "/" unary factor_tail | "%" unary factor
 
 unary ::= "-" unary | "!" unary | primary
 
-primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+primary ::= IDENT primary_suffix | "(" expr ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
+primary_suffix ::= "(" args ")" | "[" expr "]" | epsilon
 
 args ::= arg_list | epsilon
 
@@ -106,9 +108,10 @@ FIRST(block) = {"{"}
 FIRST(local_decls) = {"int", "float", "bool", epsilon}
 FIRST(local_decls_tail) = {"int", "float", "bool", epsilon}
 FIRST(local_decl) = {"int", "float", "bool"}
+FIRST(array_decl) = {"[", epsilon}
 FIRST(stmt_list) =  {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return", epsilon}
 FIRST(stmt_list_tail) = {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return", epsilon}
-FIRST(stmt) =  {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
+FIRST(stmt) =  {";", IDENT, "-", "!", "(", INT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
 FIRST(expr_stmt) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, ";"}
 FIRST(while_stmt) = {"while"}
 FIRST(if_stmt) = {"if"}
@@ -116,6 +119,7 @@ FIRST(else_stmt) = {"else", epsilon}
 FIRST(return_stmt) = {"return"}
 
 FIRST(expr) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(left) = {IDENT}
 FIRST(logical_or) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(logical_or_tail) = {"||", epsilon}
 FIRST(logical_and) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
@@ -130,6 +134,7 @@ FIRST(factor) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(factor_tail) = {"*", "/", "%", epsilon}
 FIRST(unary) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(primary) = {IDENT, "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
+FIRST(primary_suffix) = {"(", "[", epsilon}
 FIRST(args) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, epsilon}
 FIRST(arg_list) = {IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT}
 FIRST(arg_list_tail) = {",", epsilon}
@@ -141,9 +146,52 @@ FIRST(arg_list_tail) = {",", epsilon}
 FOLLOW(program) = {eof}
 FOLLOW(extern_list) = {"int", "float", "bool", "void"}
 FOLLOW(extern_list_tail) = {"int", "float", "bool", "void"}
-FOLLOW(extern) = {"extern"}
+FOLLOW(extern) = {"extern", "int", "float", "bool", "void"}
 FOLLOW(decl_list) = {eof}
+FOLLOW(decl_list_tail) = {eof}
+FOLLOW(decl) = {"int", "float", "bool", "void", eof}
+FOLLOW(var_decl) = {"int", "float", "bool", "void", eof}
+FOLLOW(fun_decl) = {"int", "float", "bool", "void", eof}
+FOLLOW(type_spec) = {IDENT}
+FOLLOW(var_type) = {IDENT}
+FOLLOW(params) = {")"}
+FOLLOW(param_list) = {")"}
+FOLLOW(param_list_tail) = {")"}
+FOLLOW(param) = {",", ")"}
+FOLLOW(block) = {"}"}
+FOLLOW(local_decls) = {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
+FOLLOW(local_decls_tail) = {";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
+FOLLOW(local_decl) = {"int", "float", "bool", "void", ";", IDENT, "-", "!", "(", NT_LIT, FLOAT_LIT, BOOL_LIT, "{", "if", "while", "return"}
+FOLLOW(array_decl) = {IDENT, ")"}
+FOLLOW(stmt_list) = {"}"}
+FOLLOW(stmt_list_tail) = {"}"}
+FOLLOW(stmt) = {"}"}
+FOLLOW(expr_stmt) = {"}"}
+FOLLOW(while_stmt) = {"}"}
+FOLLOW(if_stmt) = {"}"}
+FOLLOW(else_stmt) = {"}"}
+FOLLOW(return_stmt) = {"}"}
 
+FOLLOW(expr) = {")", "]", ",", ";"}
+FOLLOW(left) = {"="}
+FOLLOW(logical_or) = {")", "]", ",", ";", "||"}
+FOLLOW(logical_or_tail) = {")", "]", ",", ";", "||"}
+FOLLOW(logical_and) = {")", "]", ",", ";", "||", "&&"}
+FOLLOW(logical_and_tail) = {")", "]", ",", ";", "||", "&&"}
+FOLLOW(equality) = {")", "]", ",", ";", "||", "&&", "==", "!="}
+FOLLOW(equality_tail) = {")", "]", ",", ";", "||", "&&", "==", "!="}
+FOLLOW(inequality) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">"}
+FOLLOW(inequality_tail) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">"}
+FOLLOW(term) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-"}
+FOLLOW(term_tail) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-"}
+FOLLOW(factor) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-", "*", "/", "%"}
+FOLLOW(factor_tail) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-", "*", "/", "%"}
+FOLLOW(unary) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-", "*", "/", "%"}
+FOLLOW(primary) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-", "*", "/", "%"}
+FOLLOW(primarry_suffix) = {")", "]", ",", ";", "||", "&&", "==", "!=", "<=", "<", ">=", ">", "+", "-", "*", "/", "%"}
+FOLLOW(args) = {")"}
+FOLLOW(args_list) = {")"}
+FOLLOW(arg_list_tail) = {")"}
 
 
 

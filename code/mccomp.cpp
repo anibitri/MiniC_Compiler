@@ -955,7 +955,7 @@ class ArrayAccessAST : public ASTnode{
 
 /// LogError* - These are little helper function for error handling.
 std::unique_ptr<ASTnode> LogError(TOKEN tok, const char *Str) {
-  fprintf(stderr, "%d:%d Error: %s\n", tok.lineNo, tok.columnNo, Str);
+  fprintf(stderr, "Line: %d, Col: %d, Token: %s, Error: %s \n", tok.lineNo, tok.columnNo, tok.lexeme.c_str(), Str);
   exit(2);
   return nullptr;
 }
@@ -1029,7 +1029,6 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParamListPrime() {
 
     auto param = ParseParam();
     if (param) {
-      printf("found param in param_list_prime: %s\n", param->getName().c_str());
       param_list.push_back(std::move(param));
       auto param_list_prime = ParseParamListPrime();
       for (unsigned i = 0; i < param_list_prime.size(); i++) {
@@ -1065,7 +1064,6 @@ static std::unique_ptr<ParamAST> ParseParam() {
   }
 
   std::string Name = CurTok.getIdentifierStr();
-  printf("found param: %s of type %s\n", Name.c_str(), Type.c_str());
   getNextToken(); // eat IDENT
 
   auto arrayDimensions = ParseArrayDimensions();
@@ -1135,7 +1133,7 @@ static std::vector<std::unique_ptr<ParamAST>> ParseParams() {
 **/
 
 // expr ::= left "=" expr | logical_or 
-// left::= IDENT | primarry_suffix
+// left::= IDENT array_suffix
 static std::unique_ptr<ASTnode> ParseExper() {
     auto LHS = ParseLogicalOr(); // parse the left-hand side
     if (!LHS) return nullptr;
@@ -1322,7 +1320,6 @@ static std::unique_ptr<ASTnode> ParseUnary() {
   }
 }
 
-// primary ::= "(" expr ")" | IDENT | IDENT "(" args ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
 // primary ::= IDENT primary_suffix | "(" expr ")" | NT_LIT | FLOAT_LIT | BOOL_LIT
 static std::unique_ptr<ASTnode> ParsePrimary() {
   if (CurTok.type == LPAR) { 
@@ -1596,30 +1593,25 @@ static std::unique_ptr<ASTnode> ParseStmt() {
       CurTok.type == SC) { // FIRST(expr_stmt)
     // expand by stmt ::= expr_stmt
     auto expr_stmt = ParseExperStmt();
-    fprintf(stderr, "Parsed an expression statement\n");
     return expr_stmt;
   } else if (CurTok.type == LBRA) { // FIRST(block)
     auto block_stmt = ParseBlock();
     if (block_stmt) {
-      fprintf(stderr, "Parsed a block\n");
       return block_stmt;
     }
   } else if (CurTok.type == IF) { // FIRST(if_stmt)
     auto if_stmt = ParseIfStmt();
     if (if_stmt) {
-      fprintf(stderr, "Parsed an if statment\n");
       return if_stmt;
     }
   } else if (CurTok.type == WHILE) { // FIRST(while_stmt)
     auto while_stmt = ParseWhileStmt();
     if (while_stmt) {
-      fprintf(stderr, "Parsed a while statment\n");
       return while_stmt;
     }
   } else if (CurTok.type == RETURN) { // FIRST(return_stmt)
     auto return_stmt = ParseReturnStmt();
     if (return_stmt) {
-      fprintf(stderr, "Parsed a return statment\n");
       return return_stmt;
     }
   }
@@ -1744,7 +1736,6 @@ static std::unique_ptr<VarDeclAST> ParseLocalDecl() {
       auto ident = std::make_unique<VariableASTnode>(identTok, Name);
       local_decl = std::make_unique<VarDeclAST>(std::move(ident), Type, std::move(dimensions));
 
-      fprintf(stderr, "Parsed a local variable declaration\n");
     } else {
       LogError(CurTok, "expected identifier' in local variable declaration");
       return nullptr;
@@ -1828,9 +1819,7 @@ static std::unique_ptr<ASTnode> ParseBlock() {
   getNextToken(); // eat '{'
 
   local_decls = ParseLocalDecls();
-  fprintf(stderr, "Parsed a set of local variable declaration\n");
   stmt_list = ParseStmtList();
-  fprintf(stderr, "Parsed a list of statements\n");
   if (CurTok.type == RBRA)
     getNextToken(); // eat '}'
   else {            // syntax error
@@ -1865,7 +1854,6 @@ static std::unique_ptr<ASTnode> ParseDecl() {
       if (CurTok.type == SC) {         // found ';' then this is a global variable declaration.
 
         getNextToken(); // eat ;
-        fprintf(stderr, "Parsed a variable declaration\n");
 
         if (PrevTok.type == VOID_TOK) {
             return LogError(PrevTok, "Cannot have variable declaration with type 'void'");
@@ -1886,7 +1874,6 @@ static std::unique_ptr<ASTnode> ParseDecl() {
 
         auto P = ParseParams(); // parse the parameters, returns a vector of params
         // if (P.size() == 0) return nullptr;
-        fprintf(stderr, "Parsed parameter list for function\n");
 
         if (CurTok.type != RPAR) // syntax error
           return LogError(CurTok, "expected ')' in function declaration");
@@ -1899,14 +1886,14 @@ static std::unique_ptr<ASTnode> ParseDecl() {
         auto B = ParseBlock(); // parse the function body
         if (!B)
           return nullptr;
-        else
-          fprintf(stderr, "Parsed block of statements in function\n");
+        // else
+        //   fprintf(stderr, "Parsed block of statements in function\n");
 
         // now create a Function prototype
         // create a Function body
         // put these to together
         // and return a std::unique_ptr<FunctionDeclAST>
-        fprintf(stderr, "Parsed a function declaration\n");
+        // fprintf(stderr, "Parsed a function declaration\n");
 
         auto Proto = std::make_unique<FunctionPrototypeAST>(
             IdName, PrevTok.lexeme, std::move(P));
@@ -1932,7 +1919,6 @@ static void ParseDeclListPrime() {
 
     if (auto decl = ParseDecl()) {
       llvm::outs() << decl->to_string() << "\n";
-      fprintf(stderr, "Parsed a top-level variable or function declaration\n");
       TopLevelDecls.push_back(std::move(decl));
     }
     ParseDeclListPrime();
@@ -1950,7 +1936,6 @@ static void ParseDeclList() {
   
   if (decl) {
     llvm::outs() << decl->to_string() << "\n";
-    fprintf(stderr, "Parsed a top-level variable or function declaration\n");
     TopLevelDecls.push_back(std::move(decl));
     ParseDeclListPrime();
 
@@ -1983,7 +1968,6 @@ static std::unique_ptr<FunctionPrototypeAST> ParseExtern() {
           if (P.size() == 0)
             return nullptr;
           else
-            fprintf(stderr, "Parsed parameter list for external function\n");
 
           if (CurTok.type != RPAR) // syntax error
             return LogErrorP(
@@ -2020,8 +2004,6 @@ static void ParseExternListPrime() {
   if (CurTok.type == EXTERN) { // FIRST(extern)
     if (auto Extern = ParseExtern()) {
       Extern->codegen(); // generate code for the extern function prototype
-      fprintf(stderr,
-              "Parsed a top-level external function declaration -- 2\n");
     }
     ParseExternListPrime();
   } else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK ||
@@ -2041,8 +2023,7 @@ static void ParseExternList() {
   if (Extern) {
     // generate code for the extern function prototype
     llvm::outs() << Extern->to_string() << "\n";
-    llvm::outs() << Extern->codegen() << "\n";
-    fprintf(stderr, "Parsed a top-level external function declaration -- 1\n");
+    Extern->codegen();
     // fprintf(stderr, "Current token: %s \n", CurTok.lexeme.c_str());
     if (CurTok.type == EXTERN)
       ParseExternListPrime();
